@@ -15,11 +15,21 @@ type CSSVars = CSSProperties & {
 }
 
 const STEAM_TARGETS: Target[] = [
-  { name: 'capsule_main', w: 616, h: 353 },
-  { name: 'capsule_small', w: 231, h: 87 },
-  { name: 'header', w: 460, h: 215 },
+  { name: 'header_capsule', w: 920, h: 430 },
+  { name: 'small_capsule', w: 462, h: 174 },
+  { name: 'main_capsule', w: 1232, h: 706 },
+  { name: 'vertical_capsule', w: 748, h: 896 },
+  { name: 'screenshot', w: 1920, h: 1080 },
+  { name: 'page_background', w: 1438, h: 810 },
   { name: 'library_capsule', w: 600, h: 900 },
   { name: 'library_hero', w: 3840, h: 1240 },
+  { name: 'library_logo', w: 1280, h: 720 },
+  { name: 'event_cover', w: 800, h: 450 },
+  { name: 'event_header', w: 1920, h: 622 },
+  { name: 'broadcast_side_panel', w: 155, h: 337 },
+  { name: 'community_icon', w: 184, h: 184 },
+  { name: 'client_image', w: 16, h: 16 },
+  { name: 'client_icon', w: 32, h: 32 },
 ]
 
 const stepStyle = (delayMs: number): CSSVars => ({
@@ -84,8 +94,8 @@ function App() {
     setIsBusy(true)
     try {
       await invoke('export_images', {
-        input_path: inputPath,
-        output_dir: outputDir,
+        inputPath,
+        outputDir,
         targets: STEAM_TARGETS,
       })
       await message('Export complete.')
