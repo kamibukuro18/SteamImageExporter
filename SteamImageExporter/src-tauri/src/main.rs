@@ -4,8 +4,3 @@
 fn main() {
   app_lib::run();
 }
-
-#[tauri::command]
-fn ping(name: String) -> String {
-  format!("pong: {}", name)
-}
