@@ -1,6 +1,6 @@
-import type { CSSProperties } from 'react'
-import { useState } from 'react'
-import { invoke } from '@tauri-apps/api/core'
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
+import { useState, useRef } from 'react'
+import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { message, open } from '@tauri-apps/plugin-dialog'
 import './App.css'
 
@@ -8,29 +8,46 @@ type Target = {
   name: string
   w: number
   h: number
+  mode: 'fill' | 'fit' | 'fit_extend'
 }
 
 type CSSVars = CSSProperties & {
   '--delay'?: string
 }
 
+type FocusPoint = {
+  x: number
+  y: number
+}
+
+type ImageMeta = {
+  naturalWidth: number
+  naturalHeight: number
+}
+
 const STEAM_TARGETS: Target[] = [
-  { name: 'header_capsule', w: 920, h: 430 },
-  { name: 'small_capsule', w: 462, h: 174 },
-  { name: 'main_capsule', w: 1232, h: 706 },
-  { name: 'vertical_capsule', w: 748, h: 896 },
-  { name: 'screenshot', w: 1920, h: 1080 },
-  { name: 'page_background', w: 1438, h: 810 },
-  { name: 'library_capsule', w: 600, h: 900 },
-  { name: 'library_hero', w: 3840, h: 1240 },
-  { name: 'library_logo', w: 1280, h: 720 },
-  { name: 'event_cover', w: 800, h: 450 },
-  { name: 'event_header', w: 1920, h: 622 },
-  { name: 'broadcast_side_panel', w: 155, h: 337 },
-  { name: 'community_icon', w: 184, h: 184 },
-  { name: 'client_image', w: 16, h: 16 },
-  { name: 'client_icon', w: 32, h: 32 },
+  { name: 'header_capsule', w: 920, h: 430, mode: 'fill' },
+  { name: 'small_capsule', w: 462, h: 174, mode: 'fill' },
+  { name: 'main_capsule', w: 1232, h: 706, mode: 'fill' },
+  { name: 'vertical_capsule', w: 748, h: 896, mode: 'fill' },
+  { name: 'screenshot', w: 1920, h: 1080, mode: 'fill' },
+  { name: 'page_background', w: 1438, h: 810, mode: 'fill' },
+  { name: 'library_capsule', w: 600, h: 900, mode: 'fill' },
+  { name: 'library_hero', w: 3840, h: 1240, mode: 'fill' },
+  { name: 'library_logo', w: 1280, h: 720, mode: 'fill' },
+  { name: 'event_cover', w: 800, h: 450, mode: 'fill' },
+  { name: 'event_header', w: 1920, h: 622, mode: 'fill' },
+  { name: 'broadcast_side_panel', w: 155, h: 337, mode: 'fill' },
+  { name: 'community_icon', w: 184, h: 184, mode: 'fill' },
+  { name: 'client_image', w: 16, h: 16, mode: 'fill' },
+  { name: 'client_icon', w: 32, h: 32, mode: 'fill' },
 ]
+
+const MODE_LABELS: Record<Target['mode'], string> = {
+  fill: 'Fill (crop)',
+  fit: 'Fit (black)',
+  fit_extend: 'Fit Extend (blur)',
+}
 
 const stepStyle = (delayMs: number): CSSVars => ({
   '--delay': `${delayMs}ms`,
@@ -47,8 +64,24 @@ function App() {
   const [inputPath, setInputPath] = useState<string | null>(null)
   const [outputDir, setOutputDir] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
+  const [focus, setFocus] = useState<FocusPoint | null>(null)
+  const [imageMeta, setImageMeta] = useState<ImageMeta | null>(null)
+  const [exportMode, setExportMode] = useState<Target['mode']>('fill')
+  const previewImageRef = useRef<HTMLImageElement | null>(null)
 
   const canExport = Boolean(inputPath && outputDir && !isBusy)
+  const previewSrc = inputPath ? convertFileSrc(inputPath) : null
+  const targetsToExport = STEAM_TARGETS.map((target) => ({
+    ...target,
+    mode: exportMode,
+  }))
+  const focusMarkerStyle =
+    focus && imageMeta
+      ? {
+          left: `${(focus.x / imageMeta.naturalWidth) * 100}%`,
+          top: `${(focus.y / imageMeta.naturalHeight) * 100}%`,
+        }
+      : undefined
 
   const handlePickInput = async () => {
     try {
@@ -65,6 +98,8 @@ function App() {
       const resolved = resolveSelection(selected)
       if (resolved) {
         setInputPath(resolved)
+        setFocus(null)
+        setImageMeta(null)
       }
     } catch (err) {
       await message(`Failed to open file picker: ${String(err)}`)
@@ -96,7 +131,8 @@ function App() {
       await invoke('export_images', {
         inputPath,
         outputDir,
-        targets: STEAM_TARGETS,
+        targets: targetsToExport,
+        focus: focus ? { x: focus.x, y: focus.y } : null,
       })
       await message('Export complete.')
     } catch (err) {
@@ -104,6 +140,42 @@ function App() {
     } finally {
       setIsBusy(false)
     }
+  }
+
+  const handlePreviewLoad = () => {
+    const img = previewImageRef.current
+    if (!img) {
+      return
+    }
+    setImageMeta({
+      naturalWidth: img.naturalWidth,
+      naturalHeight: img.naturalHeight,
+    })
+  }
+
+  const handlePreviewClick = (
+    event: ReactMouseEvent<HTMLImageElement>,
+  ) => {
+    const img = previewImageRef.current
+    if (!img || img.clientWidth === 0 || img.clientHeight === 0) {
+      return
+    }
+    const rect = img.getBoundingClientRect()
+    const clickX = event.clientX - rect.left
+    const clickY = event.clientY - rect.top
+    const focusX = Math.round(
+      clickX * (img.naturalWidth / img.clientWidth),
+    )
+    const focusY = Math.round(
+      clickY * (img.naturalHeight / img.clientHeight),
+    )
+    const clampedX = Math.min(Math.max(focusX, 0), img.naturalWidth - 1)
+    const clampedY = Math.min(Math.max(focusY, 0), img.naturalHeight - 1)
+    setFocus({ x: clampedX, y: clampedY })
+    setImageMeta({
+      naturalWidth: img.naturalWidth,
+      naturalHeight: img.naturalHeight,
+    })
   }
 
   return (
@@ -140,7 +212,61 @@ function App() {
             <p className="path">{inputPath ?? 'Not selected'}</p>
           </div>
 
+          {previewSrc ? (
+            <div className="step step--preview" style={stepStyle(40)}>
+              <div className="step__row">
+                <div>
+                  <p className="step__label">Focus point</p>
+                  <p className="step__hint">
+                    Click the image to set focus. Default is center.
+                  </p>
+                </div>
+                <button
+                  className="button button--ghost"
+                  onClick={() => setFocus(null)}
+                  disabled={!focus || isBusy}
+                >
+                  Reset focus
+                </button>
+              </div>
+              <div className="preview">
+                <img
+                  ref={previewImageRef}
+                  src={previewSrc}
+                  alt="Input preview"
+                  onLoad={handlePreviewLoad}
+                  onClick={handlePreviewClick}
+                />
+                {focus && imageMeta ? (
+                  <span className="focus-marker" style={focusMarkerStyle} />
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           <div className="step" style={stepStyle(80)}>
+            <div className="step__row">
+              <div>
+                <p className="step__label">Mode</p>
+                <p className="step__hint">Choose how the output fills the frame.</p>
+              </div>
+            </div>
+            <div className="mode-select" role="group" aria-label="Export mode">
+              {(Object.keys(MODE_LABELS) as Target['mode'][]).map((mode) => (
+                <button
+                  key={mode}
+                  className={`mode-pill${exportMode === mode ? ' is-active' : ''}`}
+                  type="button"
+                  onClick={() => setExportMode(mode)}
+                  disabled={isBusy}
+                >
+                  {MODE_LABELS[mode]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="step" style={stepStyle(120)}>
             <div className="step__row">
               <div>
                 <p className="step__label">2 Output folder</p>
@@ -157,7 +283,7 @@ function App() {
             <p className="path">{outputDir ?? 'Not selected'}</p>
           </div>
 
-          <div className="step step--cta" style={stepStyle(160)}>
+          <div className="step step--cta" style={stepStyle(200)}>
             <div className="step__row">
               <div>
                 <p className="step__label">3 Export</p>
@@ -184,7 +310,7 @@ function App() {
           <div className="card">
             <h2>Steam preset</h2>
             <ul className="targets">
-              {STEAM_TARGETS.map((target) => (
+              {targetsToExport.map((target) => (
                 <li key={target.name}>
                   <span className="targets__name">{target.name}</span>
                   <span className="targets__size">
