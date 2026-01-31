@@ -215,6 +215,11 @@
   border-color: rgba(255, 138, 61, 0.6);
 }
 
+.button--mini {
+  padding: 0.35rem 0.8rem;
+  font-size: 0.8rem;
+}
+
 .status {
   display: flex;
   align-items: center;
@@ -266,6 +271,20 @@
   box-shadow: 0 14px 30px rgba(31, 27, 22, 0.12);
 }
 
+.card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.card__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .card h2,
 .card h3 {
   margin: 0 0 0.6rem;
@@ -293,6 +312,18 @@
   border-radius: 12px;
   background: var(--card);
   border: 1px solid var(--border-soft);
+}
+
+.targets__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.targets__check input {
+  width: 16px;
+  height: 16px;
+  accent-color: #ff8a3d;
 }
 
 .targets__name {

@@ -76,12 +76,17 @@ function App() {
   const [focus, setFocus] = useState<FocusPoint | null>(null)
   const [imageMeta, setImageMeta] = useState<ImageMeta | null>(null)
   const [exportMode, setExportMode] = useState<Target['mode']>('fill')
+  const [selectedNames, setSelectedNames] = useState<Set<string>>(
+    () => new Set(STEAM_TARGETS.map((target) => target.name)),
+  )
   const previewImageRef = useRef<HTMLImageElement | null>(null)
   const [progress, setProgress] = useState<ProgressPayload | null>(null)
 
   const canExport = Boolean(inputPath && outputDir && !isBusy)
   const previewSrc = inputPath ? convertFileSrc(inputPath) : null
-  const targetsToExport = STEAM_TARGETS.map((target) => ({
+  const targetsToExport = STEAM_TARGETS.filter((target) =>
+    selectedNames.has(target.name),
+  ).map((target) => ({
     ...target,
     mode: exportMode,
   }))
@@ -170,6 +175,10 @@ function App() {
       await message('Select an input image and output folder first.')
       return
     }
+    if (targetsToExport.length === 0) {
+      await message('Select at least one output size.')
+      return
+    }
     setIsBusy(true)
     setProgress(null)
     try {
@@ -196,6 +205,26 @@ function App() {
       naturalWidth: img.naturalWidth,
       naturalHeight: img.naturalHeight,
     })
+  }
+
+  const toggleTarget = (name: string) => {
+    setSelectedNames((prev) => {
+      const next = new Set(prev)
+      if (next.has(name)) {
+        next.delete(name)
+      } else {
+        next.add(name)
+      }
+      return next
+    })
+  }
+
+  const selectAllTargets = () => {
+    setSelectedNames(new Set(STEAM_TARGETS.map((target) => target.name)))
+  }
+
+  const clearAllTargets = () => {
+    setSelectedNames(new Set())
   }
 
   const handlePreviewClick = (
@@ -358,11 +387,39 @@ function App() {
 
         <aside className="side">
           <div className="card">
-            <h2>Steam preset</h2>
+            <div className="card__head">
+              <h2>Steam preset</h2>
+              <div className="card__actions">
+                <button
+                  type="button"
+                  className="button button--ghost button--mini"
+                  onClick={selectAllTargets}
+                  disabled={isBusy}
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  className="button button--ghost button--mini"
+                  onClick={clearAllTargets}
+                  disabled={isBusy}
+                >
+                  Clear all
+                </button>
+              </div>
+            </div>
             <ul className="targets">
-              {targetsToExport.map((target) => (
+              {STEAM_TARGETS.map((target) => (
                 <li key={target.name}>
-                  <span className="targets__name">{target.name}</span>
+                  <label className="targets__check">
+                    <input
+                      type="checkbox"
+                      checked={selectedNames.has(target.name)}
+                      onChange={() => toggleTarget(target.name)}
+                      disabled={isBusy}
+                    />
+                    <span className="targets__name">{target.name}</span>
+                  </label>
                   <span className="targets__size">
                     {target.w}x{target.h}
                   </span>
