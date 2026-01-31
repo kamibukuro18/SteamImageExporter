@@ -3,8 +3,9 @@ use image::{
   imageops::{self, FilterType},
   DynamicImage, GenericImageView, ImageFormat, Rgba, RgbaImage,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
+use tauri::Emitter;
 
 #[derive(Deserialize, Copy, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -28,17 +29,33 @@ struct Focus {
   y: u32,
 }
 
+#[derive(Clone, Serialize)]
+struct ProgressPayload {
+  index: usize,
+  total: usize,
+  name: String,
+  phase: &'static str,
+}
+
 #[tauri::command]
-fn export_images(
+async fn export_images(
+  window: tauri::Window,
   input_path: String,
   output_dir: String,
   targets: Vec<Target>,
   focus: Option<Focus>,
 ) -> Result<(), String> {
-  export_images_inner(&input_path, &output_dir, &targets, focus).map_err(|err| err.to_string())
+  let window = window.clone();
+  tauri::async_runtime::spawn_blocking(move || {
+    export_images_inner(&window, &input_path, &output_dir, &targets, focus)
+  })
+  .await
+  .map_err(|err| err.to_string())?
+  .map_err(|err| err.to_string())
 }
 
 fn export_images_inner(
+  window: &tauri::Window,
   input_path: &str,
   output_dir: &str,
   targets: &[Target],
@@ -52,15 +69,35 @@ fn export_images_inner(
     bail!("output dir not found: {}", output_dir);
   }
 
-  for target in targets {
+  let total = targets.len();
+  for (index, target) in targets.iter().enumerate() {
+    let _ = window.emit(
+      "export://progress",
+      ProgressPayload {
+        index: index + 1,
+        total,
+        name: target.name.clone(),
+        phase: "render",
+      },
+    );
     let rendered = render_target(&source, target, focus.as_ref());
     let filename = format!("{}_{}x{}.png", target.name, target.w, target.h);
     let output_path = out_dir.join(filename);
+    let _ = window.emit(
+      "export://progress",
+      ProgressPayload {
+        index: index + 1,
+        total,
+        name: target.name.clone(),
+        phase: "save",
+      },
+    );
     rendered
       .save_with_format(&output_path, ImageFormat::Png)
       .with_context(|| format!("save failed: {}", output_path.display()))?;
   }
 
+  let _ = window.emit("export://complete", ());
   Ok(())
 }
 

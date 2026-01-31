@@ -1,6 +1,7 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
-import { useState, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { message, open } from '@tauri-apps/plugin-dialog'
 import './App.css'
 
@@ -13,6 +14,7 @@ type Target = {
 
 type CSSVars = CSSProperties & {
   '--delay'?: string
+  '--progress'?: string
 }
 
 type FocusPoint = {
@@ -23,6 +25,13 @@ type FocusPoint = {
 type ImageMeta = {
   naturalWidth: number
   naturalHeight: number
+}
+
+type ProgressPayload = {
+  index: number
+  total: number
+  name: string
+  phase: 'render' | 'save'
 }
 
 const STEAM_TARGETS: Target[] = [
@@ -68,6 +77,7 @@ function App() {
   const [imageMeta, setImageMeta] = useState<ImageMeta | null>(null)
   const [exportMode, setExportMode] = useState<Target['mode']>('fill')
   const previewImageRef = useRef<HTMLImageElement | null>(null)
+  const [progress, setProgress] = useState<ProgressPayload | null>(null)
 
   const canExport = Boolean(inputPath && outputDir && !isBusy)
   const previewSrc = inputPath ? convertFileSrc(inputPath) : null
@@ -82,6 +92,40 @@ function App() {
           top: `${(focus.y / imageMeta.naturalHeight) * 100}%`,
         }
       : undefined
+  const progressPercent =
+    progress && progress.total > 0
+      ? Math.min(100, Math.round((progress.index / progress.total) * 100))
+      : 0
+  const progressStyle: CSSVars = { '--progress': `${progressPercent}%` }
+  const progressLabel = progress
+    ? `${progress.index}/${progress.total} • ${progress.name} (${progress.phase})`
+    : null
+
+  useEffect(() => {
+    let unlistenProgress: (() => void) | null = null
+    let unlistenComplete: (() => void) | null = null
+
+    listen<ProgressPayload>('export://progress', (event) => {
+      setProgress(event.payload)
+    }).then((unlisten) => {
+      unlistenProgress = unlisten
+    })
+
+    listen('export://complete', () => {
+      setProgress(null)
+    }).then((unlisten) => {
+      unlistenComplete = unlisten
+    })
+
+    return () => {
+      if (unlistenProgress) {
+        unlistenProgress()
+      }
+      if (unlistenComplete) {
+        unlistenComplete()
+      }
+    }
+  }, [])
 
   const handlePickInput = async () => {
     try {
@@ -127,6 +171,7 @@ function App() {
       return
     }
     setIsBusy(true)
+    setProgress(null)
     try {
       await invoke('export_images', {
         inputPath,
@@ -301,8 +346,13 @@ function App() {
             </div>
             <div className="status" data-busy={isBusy ? 'true' : 'false'}>
               <span className="status__dot" />
-              <span>{isBusy ? 'Working...' : 'Idle'}</span>
+              <span>{progressLabel ?? (isBusy ? 'Working...' : 'Idle')}</span>
             </div>
+            {isBusy ? (
+              <div className="progress" style={progressStyle}>
+                <span className="progress__bar" />
+              </div>
+            ) : null}
           </div>
         </section>
 

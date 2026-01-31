@@ -223,6 +223,23 @@
   color: var(--muted);
 }
 
+.progress {
+  margin-top: 0.6rem;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.progress__bar {
+  display: block;
+  height: 100%;
+  width: var(--progress, 0%);
+  background: linear-gradient(140deg, #ff8a3d, #f7c27b);
+  transition: width 0.2s ease;
+}
+
 .status__dot {
   width: 10px;
   height: 10px;
