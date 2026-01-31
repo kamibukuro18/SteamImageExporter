@@ -5,6 +5,7 @@ use image::{
 };
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Emitter;
 
 #[derive(Deserialize, Copy, Clone)]
@@ -44,7 +45,7 @@ async fn export_images(
   output_dir: String,
   targets: Vec<Target>,
   focus: Option<Focus>,
-) -> Result<(), String> {
+) -> Result<String, String> {
   let window = window.clone();
   tauri::async_runtime::spawn_blocking(move || {
     export_images_inner(&window, &input_path, &output_dir, &targets, focus)
@@ -60,7 +61,7 @@ fn export_images_inner(
   output_dir: &str,
   targets: &[Target],
   focus: Option<Focus>,
-) -> Result<()> {
+) -> Result<String> {
   let source = image::open(input_path)
     .with_context(|| format!("open failed: {}", input_path))?;
 
@@ -68,6 +69,23 @@ fn export_images_inner(
   if !out_dir.is_dir() {
     bail!("output dir not found: {}", output_dir);
   }
+
+  let base_name = Path::new(input_path)
+    .file_stem()
+    .and_then(|name| name.to_str())
+    .unwrap_or("steam_images");
+  let safe_name = base_name
+    .chars()
+    .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+    .collect::<String>();
+  let stamp = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .unwrap_or_default()
+    .as_secs();
+  let dir_name = format!("{}_steam_{}", safe_name, stamp);
+  let target_dir = out_dir.join(dir_name);
+  std::fs::create_dir_all(&target_dir)
+    .with_context(|| format!("create dir failed: {}", target_dir.display()))?;
 
   let total = targets.len();
   for (index, target) in targets.iter().enumerate() {
@@ -82,7 +100,7 @@ fn export_images_inner(
     );
     let rendered = render_target(&source, target, focus.as_ref());
     let filename = format!("{}_{}x{}.png", target.name, target.w, target.h);
-    let output_path = out_dir.join(filename);
+    let output_path = target_dir.join(filename);
     let _ = window.emit(
       "export://progress",
       ProgressPayload {
@@ -98,7 +116,7 @@ fn export_images_inner(
   }
 
   let _ = window.emit("export://complete", ());
-  Ok(())
+  Ok(target_dir.to_string_lossy().to_string())
 }
 
 fn render_target(source: &DynamicImage, target: &Target, focus: Option<&Focus>) -> DynamicImage {
@@ -220,6 +238,7 @@ fn clamp_focus_y(focus_y: u32, crop_h: u32, ih: u32) -> u32 {
 pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_dialog::init())
+    .plugin(tauri_plugin_shell::init())
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

@@ -118,6 +118,18 @@
   word-break: break-all;
 }
 
+.path--note {
+  background: rgba(255, 255, 255, 0.7);
+  border-style: solid;
+  color: var(--muted);
+}
+
+.drop-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .preview {
   position: relative;
   border-radius: 16px;

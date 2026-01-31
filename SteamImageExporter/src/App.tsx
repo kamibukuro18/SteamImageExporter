@@ -2,7 +2,10 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { dirname } from '@tauri-apps/api/path'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { message, open } from '@tauri-apps/plugin-dialog'
+import { open as openPath } from '@tauri-apps/plugin-shell'
 import './App.css'
 
 type Target = {
@@ -81,8 +84,8 @@ function App() {
   )
   const previewImageRef = useRef<HTMLImageElement | null>(null)
   const [progress, setProgress] = useState<ProgressPayload | null>(null)
+  const [lastOutputDir, setLastOutputDir] = useState<string | null>(null)
 
-  const canExport = Boolean(inputPath && outputDir && !isBusy)
   const previewSrc = inputPath ? convertFileSrc(inputPath) : null
   const targetsToExport = STEAM_TARGETS.filter((target) =>
     selectedNames.has(target.name),
@@ -90,6 +93,9 @@ function App() {
     ...target,
     mode: exportMode,
   }))
+  const canExport = Boolean(
+    inputPath && outputDir && !isBusy && targetsToExport.length > 0,
+  )
   const focusMarkerStyle =
     focus && imageMeta
       ? {
@@ -105,6 +111,15 @@ function App() {
   const progressLabel = progress
     ? `${progress.index}/${progress.total} • ${progress.name} (${progress.phase})`
     : null
+
+  const setInputFile = (path: string) => {
+    setInputPath(path)
+    setFocus(null)
+    setImageMeta(null)
+    void dirname(path).then((dir) => {
+      setOutputDir(dir)
+    })
+  }
 
   useEffect(() => {
     let unlistenProgress: (() => void) | null = null
@@ -132,6 +147,44 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    const appWindow = getCurrentWindow()
+    let unlistenDrop: (() => void) | null = null
+
+    appWindow
+      .onDragDropEvent((event) => {
+        const payload = (event as { payload?: unknown }).payload as
+          | {
+              type?: string
+              paths?: string[]
+            }
+          | undefined
+        if (payload?.type !== 'drop') {
+          return
+        }
+        const paths = payload.paths ?? []
+        const first = paths[0]
+        if (!first) {
+          return
+        }
+        const lower = first.toLowerCase()
+        if (!['.png', '.jpg', '.jpeg', '.webp'].some((ext) => lower.endsWith(ext))) {
+          void message('Unsupported file. Use png, jpg, jpeg, or webp.')
+          return
+        }
+        setInputFile(first)
+      })
+      .then((unlisten) => {
+        unlistenDrop = unlisten
+      })
+
+    return () => {
+      if (unlistenDrop) {
+        unlistenDrop()
+      }
+    }
+  }, [])
+
   const handlePickInput = async () => {
     try {
       const selected = await open({
@@ -146,9 +199,7 @@ function App() {
       })
       const resolved = resolveSelection(selected)
       if (resolved) {
-        setInputPath(resolved)
-        setFocus(null)
-        setImageMeta(null)
+        setInputFile(resolved)
       }
     } catch (err) {
       await message(`Failed to open file picker: ${String(err)}`)
@@ -172,7 +223,7 @@ function App() {
 
   const handleExport = async () => {
     if (!inputPath || !outputDir) {
-      await message('Select an input image and output folder first.')
+      await message('Select an input image and output location first.')
       return
     }
     if (targetsToExport.length === 0) {
@@ -182,13 +233,19 @@ function App() {
     setIsBusy(true)
     setProgress(null)
     try {
-      await invoke('export_images', {
+      const exportedDir = await invoke<string>('export_images', {
         inputPath,
         outputDir,
         targets: targetsToExport,
         focus: focus ? { x: focus.x, y: focus.y } : null,
       })
+      setLastOutputDir(exportedDir)
       await message('Export complete.')
+      try {
+        await openPath(exportedDir)
+      } catch (openErr) {
+        await message(`Exported, but failed to open folder: ${String(openErr)}`)
+      }
     } catch (err) {
       await message(`Export failed: ${String(err)}`)
     } finally {
@@ -284,6 +341,7 @@ function App() {
               </button>
             </div>
             <p className="path">{inputPath ?? 'Not selected'}</p>
+            <p className="drop-hint">Drag & drop an image anywhere in the window.</p>
           </div>
 
           {previewSrc ? (
@@ -343,18 +401,23 @@ function App() {
           <div className="step" style={stepStyle(120)}>
             <div className="step__row">
               <div>
-                <p className="step__label">2 Output folder</p>
-                <p className="step__hint">Files overwrite existing outputs</p>
+                <p className="step__label">2 Output drive</p>
+                <p className="step__hint">
+                  A new folder is created inside the selected location.
+                </p>
               </div>
               <button
                 className="button button--ghost"
                 onClick={handlePickOutput}
                 disabled={isBusy}
               >
-                Choose folder
+                Choose location
               </button>
             </div>
             <p className="path">{outputDir ?? 'Not selected'}</p>
+            {lastOutputDir ? (
+              <p className="path path--note">Last output: {lastOutputDir}</p>
+            ) : null}
           </div>
 
           <div className="step step--cta" style={stepStyle(200)}>
