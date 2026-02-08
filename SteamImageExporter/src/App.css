@@ -130,6 +130,20 @@
   color: var(--muted);
 }
 
+.remember {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.remember input {
+  width: 16px;
+  height: 16px;
+  accent-color: #ff8a3d;
+}
+
 .preview {
   position: relative;
   border-radius: 16px;

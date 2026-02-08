@@ -2,7 +2,6 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { dirname } from '@tauri-apps/api/path'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { message, open } from '@tauri-apps/plugin-dialog'
 import { open as openPath } from '@tauri-apps/plugin-shell'
@@ -85,6 +84,7 @@ function App() {
   const previewImageRef = useRef<HTMLImageElement | null>(null)
   const [progress, setProgress] = useState<ProgressPayload | null>(null)
   const [lastOutputDir, setLastOutputDir] = useState<string | null>(null)
+  const [rememberOutputDir, setRememberOutputDir] = useState(false)
 
   const previewSrc = inputPath ? convertFileSrc(inputPath) : null
   const targetsToExport = STEAM_TARGETS.filter((target) =>
@@ -116,10 +116,18 @@ function App() {
     setInputPath(path)
     setFocus(null)
     setImageMeta(null)
-    void dirname(path).then((dir) => {
-      setOutputDir(dir)
-    })
   }
+
+  useEffect(() => {
+    const storedRemember = localStorage.getItem('rememberOutputDir') === 'true'
+    const storedOutputDir = localStorage.getItem('outputDir')
+    if (storedRemember && storedOutputDir) {
+      setOutputDir(storedOutputDir)
+      setRememberOutputDir(true)
+    } else if (storedRemember) {
+      setRememberOutputDir(true)
+    }
+  }, [])
 
   useEffect(() => {
     let unlistenProgress: (() => void) | null = null
@@ -284,6 +292,26 @@ function App() {
     setSelectedNames(new Set())
   }
 
+  const handleRememberOutputDir = (checked: boolean) => {
+    setRememberOutputDir(checked)
+    localStorage.setItem('rememberOutputDir', String(checked))
+    if (checked && outputDir) {
+      localStorage.setItem('outputDir', outputDir)
+    }
+    if (!checked) {
+      localStorage.removeItem('outputDir')
+    }
+  }
+
+  useEffect(() => {
+    if (!rememberOutputDir) {
+      return
+    }
+    if (outputDir) {
+      localStorage.setItem('outputDir', outputDir)
+    }
+  }, [outputDir, rememberOutputDir])
+
   const handlePreviewClick = (
     event: ReactMouseEvent<HTMLImageElement>,
   ) => {
@@ -415,6 +443,15 @@ function App() {
               </button>
             </div>
             <p className="path">{outputDir ?? 'Not selected'}</p>
+            <label className="remember">
+              <input
+                type="checkbox"
+                checked={rememberOutputDir}
+                onChange={(event) => handleRememberOutputDir(event.target.checked)}
+                disabled={isBusy}
+              />
+              Remember output folder
+            </label>
             {lastOutputDir ? (
               <p className="path path--note">Last output: {lastOutputDir}</p>
             ) : null}
