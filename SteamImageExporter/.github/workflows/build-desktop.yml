@@ -1,0 +1,93 @@
+name: build-desktop
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: windows
+            os: windows-latest
+          - name: macos
+            os: macos-latest
+          - name: linux
+            os: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Linux system dependencies
+        if: matrix.platform.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build Tauri app bundles
+        run: npx tauri build
+
+      - name: Collect Steam content (Windows)
+        if: matrix.platform.name == 'windows'
+        shell: bash
+        run: |
+          mkdir -p steam-content/windows
+          cp src-tauri/target/release/app.exe steam-content/windows/
+
+      - name: Collect Steam content (macOS)
+        if: matrix.platform.name == 'macos'
+        shell: bash
+        run: |
+          mkdir -p steam-content/macos
+          cp -R src-tauri/target/release/bundle/macos/steamimageexporter.app steam-content/macos/
+
+      - name: Collect Steam content (Linux)
+        if: matrix.platform.name == 'linux'
+        shell: bash
+        run: |
+          mkdir -p steam-content/linux
+          cp src-tauri/target/release/app steam-content/linux/
+          chmod +x steam-content/linux/app
+
+      - name: Upload installer bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.platform.name }}
+          path: src-tauri/target/release/bundle
+          if-no-files-found: error
+
+      - name: Upload Steam content
+        uses: actions/upload-artifact@v4
+        with:
+          name: steam-content-${{ matrix.platform.name }}
+          path: steam-content
+          if-no-files-found: error
