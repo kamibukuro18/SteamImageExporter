@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light;
+  color-scheme: dark;
   font-family: var(--font-body);
   line-height: 1.5;
   font-weight: 400;
@@ -10,17 +10,17 @@
   --font-display: 'Space Grotesk', 'Sora', 'Segoe UI', sans-serif;
   --font-body: 'Source Sans 3', 'IBM Plex Sans', 'Segoe UI', sans-serif;
   --font-mono: 'IBM Plex Mono', 'Consolas', 'Courier New', monospace;
-  --bg: #f4ede1;
-  --bg-deep: #efe3d1;
-  --ink: #1f1a14;
-  --muted: #5f564b;
-  --panel: #fff6ea;
-  --card: #fffaf4;
-  --pill: #fff0dc;
-  --path-bg: #fff1da;
-  --border: rgba(31, 26, 20, 0.18);
-  --border-soft: rgba(31, 26, 20, 0.12);
-  --accent: #ff8a3d;
+  --bg: #0f151f;
+  --bg-deep: #0a0f18;
+  --ink: #e7edf8;
+  --muted: #9aa6bd;
+  --panel: #141d2c;
+  --card: #1b2638;
+  --pill: #1f2d43;
+  --path-bg: #131f32;
+  --border: rgba(159, 182, 220, 0.32);
+  --border-soft: rgba(159, 182, 220, 0.2);
+  --accent: #65b8ff;
 }
 
 *,
@@ -32,8 +32,8 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: radial-gradient(circle at top right, rgba(255, 226, 180, 0.7), transparent 55%),
-    radial-gradient(circle at 20% 10%, rgba(255, 193, 140, 0.5), transparent 45%),
+  background: radial-gradient(circle at top right, rgba(77, 129, 191, 0.26), transparent 55%),
+    radial-gradient(circle at 20% 10%, rgba(50, 96, 158, 0.24), transparent 45%),
     linear-gradient(180deg, var(--bg), var(--bg-deep));
   color: var(--ink);
 }
@@ -44,8 +44,8 @@ body::before {
   inset: 0;
   background: repeating-linear-gradient(
     120deg,
-    rgba(31, 26, 20, 0.03) 0,
-    rgba(31, 26, 20, 0.03) 1px,
+    rgba(140, 170, 220, 0.05) 0,
+    rgba(140, 170, 220, 0.05) 1px,
     transparent 1px,
     transparent 18px
   );
