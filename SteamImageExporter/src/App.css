@@ -243,6 +243,19 @@
   animation-delay: var(--delay, 0ms);
 }
 
+.step--keyart .step__row {
+  justify-content: center;
+  text-align: center;
+}
+
+.step--keyart .step__hint {
+  text-align: center;
+}
+
+.step--keyart .button {
+  min-width: 180px;
+}
+
 .step--cta {
   background: linear-gradient(145deg, rgba(28, 47, 78, 0.95), rgba(22, 37, 63, 0.95));
   border-color: rgba(101, 184, 255, 0.45);
@@ -295,6 +308,20 @@
   margin: 0;
   font-size: 0.85rem;
   color: var(--muted);
+}
+
+.auto-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.auto-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: #ffd166;
 }
 
 .drop-zone {
@@ -374,6 +401,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
+  align-items: center;
 }
 
 .mode-pill {
@@ -402,6 +430,46 @@
   background: linear-gradient(140deg, #65b8ff, #8ed0ff);
   border-color: rgba(101, 184, 255, 0.75);
   color: #081324;
+}
+
+.mode-advanced {
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: rgba(20, 31, 48, 0.7);
+  padding: 0.45rem 0.6rem;
+}
+
+.mode-advanced summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.86rem;
+  user-select: none;
+}
+
+.mode-advanced__list {
+  margin-top: 0.55rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.preset-advanced {
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  background: rgba(20, 31, 48, 0.72);
+  padding: 0.6rem 0.75rem;
+}
+
+.preset-advanced summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 0.94rem;
+  user-select: none;
+}
+
+.preset-advanced[open] summary {
+  margin-bottom: 0.7rem;
 }
 
 .button {
@@ -435,9 +503,30 @@
 }
 
 .button--primary {
-  background: linear-gradient(140deg, #65b8ff, #8ed0ff);
-  color: #081324;
-  border-color: rgba(101, 184, 255, 0.75);
+  padding: 0.74rem 1.5rem;
+  background: linear-gradient(140deg, #ff9f4a, #ffd166);
+  color: #1e1306;
+  border-color: rgba(255, 209, 102, 0.9);
+  box-shadow: 0 0 0 1px rgba(255, 209, 102, 0.25), 0 10px 24px rgba(255, 159, 74, 0.38);
+}
+
+.cta-subnote {
+  margin: -0.15rem 0 0;
+  text-align: right;
+  font-size: 0.78rem;
+  color: #ffd59a;
+  letter-spacing: 0.03em;
+}
+
+.cta-actions {
+  display: grid;
+  gap: 0.55rem;
+  justify-items: end;
+}
+
+.status-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .button--mini {

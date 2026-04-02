@@ -36,8 +36,29 @@ type ProgressPayload = {
   phase: 'render' | 'save'
 }
 
-type DropZoneType = 'input' | 'logo' | 'logo_tool'
-type AppTab = 'export' | 'logo_tool' | 'template'
+type PreflightResult = {
+  issues: string[]
+}
+
+type TemplatePreviewCard = {
+  preset: string
+  data_url: string
+}
+
+type TemplatePreviewImage = {
+  name: string
+  width: number
+  height: number
+  data_url: string
+}
+
+type TemplatePreviewPayload = {
+  cards: TemplatePreviewCard[]
+  set: TemplatePreviewImage[]
+}
+
+type DropZoneType = 'input' | 'logo'
+type AppTab = 'export' | 'template'
 type TemplatePreset = 'balanced' | 'impact' | 'compact' | 'cinematic' | 'corner'
 type Locale = 'en' | 'ja'
 
@@ -116,7 +137,7 @@ const templatePresetMeta = (
     case 'corner':
       return {
         title: 'Corner',
-        description: tr(locale, 'Place logo at bottom-right corner.', '右下の隅に配置。'),
+        description: tr(locale, 'Place logo at bottom-right corner.', '右下隅に配置。'),
       }
   }
 }
@@ -124,6 +145,56 @@ const templatePresetMeta = (
 const stepStyle = (delayMs: number): CSSVars => ({
   '--delay': `${delayMs}ms`,
 })
+
+const getTemplateOverlayStyle = (
+  targetName: string,
+  preset: TemplatePreset,
+): CSSProperties => {
+  const map: Record<TemplatePreset, Record<string, { width: number; left: number; top: number }>> = {
+    balanced: {
+      header_capsule: { width: 42, left: 50, top: 62 },
+      small_capsule: { width: 50, left: 50, top: 66 },
+      main_capsule: { width: 48, left: 50, top: 60 },
+      vertical_capsule: { width: 70, left: 50, top: 34 },
+      library_capsule: { width: 78, left: 50, top: 30 },
+    },
+    impact: {
+      header_capsule: { width: 62, left: 50, top: 50 },
+      small_capsule: { width: 62, left: 50, top: 52 },
+      main_capsule: { width: 62, left: 50, top: 48 },
+      vertical_capsule: { width: 78, left: 50, top: 38 },
+      library_capsule: { width: 84, left: 50, top: 34 },
+    },
+    compact: {
+      header_capsule: { width: 34, left: 50, top: 66 },
+      small_capsule: { width: 42, left: 50, top: 68 },
+      main_capsule: { width: 40, left: 50, top: 64 },
+      vertical_capsule: { width: 62, left: 50, top: 36 },
+      library_capsule: { width: 70, left: 50, top: 32 },
+    },
+    cinematic: {
+      header_capsule: { width: 46, left: 50, top: 34 },
+      small_capsule: { width: 56, left: 50, top: 36 },
+      main_capsule: { width: 54, left: 50, top: 32 },
+      vertical_capsule: { width: 72, left: 50, top: 24 },
+      library_capsule: { width: 82, left: 50, top: 22 },
+    },
+    corner: {
+      header_capsule: { width: 24, left: 82, top: 78 },
+      small_capsule: { width: 28, left: 82, top: 78 },
+      main_capsule: { width: 28, left: 82, top: 78 },
+      vertical_capsule: { width: 46, left: 76, top: 82 },
+      library_capsule: { width: 50, left: 76, top: 82 },
+    },
+  }
+  const value = map[preset][targetName] ?? { width: 50, left: 50, top: 50 }
+  return {
+    width: `${value.width}%`,
+    left: `${value.left}%`,
+    top: `${value.top}%`,
+    transform: 'translate(-50%, -50%)',
+  }
+}
 
 const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp']
 
@@ -148,6 +219,35 @@ const modeLabel = (locale: Locale, mode: Target['mode']): string => {
   return MODE_LABELS[mode]
 }
 
+const preflightIssueLabel = (locale: Locale, issue: string): string => {
+  switch (issue) {
+    case 'input_missing':
+      return tr(locale, 'Input image is missing.', '入力画像が未設定です。')
+    case 'input_not_found':
+      return tr(locale, 'Input image could not be found.', '入力画像が見つかりません。')
+    case 'input_not_readable':
+      return tr(locale, 'Input image could not be opened.', '入力画像を開けません。')
+    case 'targets_empty':
+      return tr(locale, 'No output targets are selected.', '出力ターゲットが選択されていません。')
+    case 'output_dir_missing':
+      return tr(locale, 'Output folder is missing.', '出力先フォルダが見つかりません。')
+    case 'output_dir_not_directory':
+      return tr(locale, 'Selected output path is not a folder.', '選択した出力先がフォルダではありません。')
+    case 'output_dir_not_writable':
+      return tr(locale, 'Output folder is not writable.', '出力先フォルダに書き込めません。')
+    case 'focus_out_of_bounds':
+      return tr(locale, 'Focus point is outside the image bounds.', '注目点が画像範囲外です。')
+    case 'logo_required':
+      return tr(locale, 'A logo image is required for the selected outputs.', '選択した出力にはロゴ画像が必要です。')
+    case 'logo_not_found':
+      return tr(locale, 'Logo image could not be found.', 'ロゴ画像が見つかりません。')
+    case 'logo_not_readable':
+      return tr(locale, 'Logo image could not be opened.', 'ロゴ画像を開けません。')
+    default:
+      return issue
+  }
+}
+
 function App() {
   const [locale, setLocale] = useState<Locale>('en')
   const [appTab, setAppTab] = useState<AppTab>('export')
@@ -155,25 +255,25 @@ function App() {
   const [inputPath, setInputPath] = useState<string | null>(null)
   const [logoPath, setLogoPath] = useState<string | null>(null)
   const [outputDir, setOutputDir] = useState<string | null>(null)
-  const [logoOutputDir, setLogoOutputDir] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
-  const [isLogoBusy, setIsLogoBusy] = useState(false)
   const [focus, setFocus] = useState<FocusPoint | null>(null)
   const [imageMeta, setImageMeta] = useState<ImageMeta | null>(null)
   const [exportMode, setExportMode] = useState<Target['mode']>('fill')
+  const [autoRemoveLogoBg, setAutoRemoveLogoBg] = useState(true)
   const [selectedNames, setSelectedNames] = useState<Set<string>>(
     () => new Set(STEAM_TARGETS.map((target) => target.name)),
   )
   const previewImageRef = useRef<HTMLImageElement | null>(null)
   const inputDropZoneRef = useRef<HTMLDivElement | null>(null)
   const logoDropZoneRef = useRef<HTMLDivElement | null>(null)
-  const logoToolDropZoneRef = useRef<HTMLDivElement | null>(null)
   const [activeDropZone, setActiveDropZone] = useState<DropZoneType | null>(null)
+  const activeDropZoneRef = useRef<DropZoneType | null>(null)
   const [progress, setProgress] = useState<ProgressPayload | null>(null)
   const [lastOutputDir, setLastOutputDir] = useState<string | null>(null)
-  const [lastLogoOutputPath, setLastLogoOutputPath] = useState<string | null>(null)
-  const [rememberOutputDir, setRememberOutputDir] = useState(false)
-  const [logoAspectRatio, setLogoAspectRatio] = useState<number | null>(null)
+  const [exportCompleted, setExportCompleted] = useState(false)
+  const [templatePreview, setTemplatePreview] = useState<TemplatePreviewPayload | null>(null)
+  const [templatePreviewBusy, setTemplatePreviewBusy] = useState(false)
+  const [templatePreviewError, setTemplatePreviewError] = useState<string | null>(null)
 
   const previewSrc = inputPath ? convertFileSrc(inputPath) : null
   const logoPreviewSrc = logoPath ? convertFileSrc(logoPath) : null
@@ -185,11 +285,7 @@ function App() {
     ...target,
     mode: exportMode,
   }))
-  const canExport = Boolean(
-    inputPath && outputDir && !isBusy && targetsToExport.length > 0,
-  )
-  const canCreateTransparentLogo = Boolean(logoPath && logoOutputDir && !isLogoBusy)
-  const canRenderTemplatePreview = Boolean(templateKeyartSrc && templateLogoSrc)
+  const canExport = Boolean(inputPath && !isBusy)
   const focusMarkerStyle =
     focus && imageMeta
       ? {
@@ -205,11 +301,18 @@ function App() {
   const progressLabel = progress
     ? `${progress.index}/${progress.total} • ${progress.name} (${progress.phase})`
     : null
+  const exportStatusLabel = (() => {
+    if (!inputPath) return 'Waiting for key art'
+    if (isBusy) return 'Generating…'
+    if (exportCompleted) return 'Done'
+    return 'Ready'
+  })()
 
   const setInputFile = (path: string) => {
     setInputPath(path)
     setFocus(null)
     setImageMeta(null)
+    setExportCompleted(false)
   }
 
   const setLogoFile = (path: string) => {
@@ -219,13 +322,11 @@ function App() {
   const resolveDropZoneFromPosition = (
     position: { x: number; y: number },
   ): DropZoneType | null => {
-    const scale = window.devicePixelRatio || 1
-    const x = position.x / scale
-    const y = position.y / scale
+    const x = position.x
+    const y = position.y
     const zones: Array<{ kind: DropZoneType; element: HTMLDivElement | null }> = [
       { kind: 'input', element: inputDropZoneRef.current },
       { kind: 'logo', element: logoDropZoneRef.current },
-      { kind: 'logo_tool', element: logoToolDropZoneRef.current },
     ]
     for (const zone of zones) {
       const rect = zone.element?.getBoundingClientRect()
@@ -241,86 +342,9 @@ function App() {
     return null
   }
 
-  const getTemplateOverlayStyle = (
-    targetName: string,
-    preset: TemplatePreset,
-  ): CSSProperties => {
-    const map: Record<TemplatePreset, Record<string, { width: number; maxHeight: number; x?: number; y: number; marginX: number; marginY: number }>> = {
-      balanced: {
-        header_capsule: { width: 42, maxHeight: 62, y: 20, marginX: 4, marginY: 4 },
-        small_capsule: { width: 50, maxHeight: 72, y: 18, marginX: 4, marginY: 8 },
-        main_capsule: { width: 48, maxHeight: 56, y: 18, marginX: 4, marginY: 4 },
-        vertical_capsule: { width: 70, maxHeight: 34, y: -2, marginX: 5, marginY: 4 },
-        library_capsule: { width: 78, maxHeight: 32, y: -3, marginX: 5, marginY: 4 },
-      },
-      impact: {
-        header_capsule: { width: 84, maxHeight: 96, y: 0, marginX: 5, marginY: 5 },
-        small_capsule: { width: 68, maxHeight: 88, y: 0, marginX: 5, marginY: 10 },
-        main_capsule: { width: 66, maxHeight: 70, y: 0, marginX: 5, marginY: 5 },
-        vertical_capsule: { width: 82, maxHeight: 42, y: 0, marginX: 6, marginY: 5 },
-        library_capsule: { width: 90, maxHeight: 44, y: 0, marginX: 6, marginY: 5 },
-      },
-      compact: {
-        header_capsule: { width: 34, maxHeight: 52, y: 14, marginX: 4, marginY: 4 },
-        small_capsule: { width: 42, maxHeight: 62, y: 12, marginX: 4, marginY: 8 },
-        main_capsule: { width: 40, maxHeight: 46, y: 12, marginX: 4, marginY: 4 },
-        vertical_capsule: { width: 62, maxHeight: 30, y: -4, marginX: 5, marginY: 4 },
-        library_capsule: { width: 70, maxHeight: 28, y: -6, marginX: 5, marginY: 4 },
-      },
-      cinematic: {
-        header_capsule: { width: 46, maxHeight: 62, y: -20, marginX: 4, marginY: 4 },
-        small_capsule: { width: 56, maxHeight: 76, y: -12, marginX: 4, marginY: 12 },
-        main_capsule: { width: 54, maxHeight: 58, y: -16, marginX: 4, marginY: 4 },
-        vertical_capsule: { width: 72, maxHeight: 36, y: -22, marginX: 5, marginY: 4 },
-        library_capsule: { width: 82, maxHeight: 36, y: -20, marginX: 5, marginY: 4 },
-      },
-      corner: {
-        header_capsule: { width: 24, maxHeight: 40, x: 0, y: 0, marginX: 3, marginY: 4 },
-        small_capsule: { width: 28, maxHeight: 46, x: 0, y: 0, marginX: 3, marginY: 9 },
-        main_capsule: { width: 28, maxHeight: 34, x: 0, y: 0, marginX: 3, marginY: 4 },
-        vertical_capsule: { width: 46, maxHeight: 28, x: 0, y: 0, marginX: 4, marginY: 5 },
-        library_capsule: { width: 50, maxHeight: 24, x: 0, y: 0, marginX: 4, marginY: 5 },
-      },
-    }
-    const base = map[preset][targetName] ?? { width: 70, maxHeight: 40, y: 0, marginX: 4, marginY: 4 }
-    let width = base.width
-    let maxHeightValue = base.maxHeight
-    let x = base.x ?? 0
-    let y = base.y
-    let marginX = base.marginX
-    let marginY = base.marginY
-    if (logoAspectRatio !== null && Number.isFinite(logoAspectRatio)) {
-      if (logoAspectRatio < 0.9) {
-        const t = Math.min(1, Math.max(0, (0.9 - logoAspectRatio) / 0.9))
-        maxHeightValue = maxHeightValue * (1 - 0.24 * t)
-        marginY = marginY + 4 * t
-        y = y * (1 - 0.8 * t)
-      } else if (logoAspectRatio > 1.1) {
-        const t = Math.min(1, Math.max(0, (logoAspectRatio - 1.1) / 2.4))
-        width = width * (1 - 0.15 * t)
-        marginX = marginX + 2 * t
-        x = x * (1 - 0.35 * t)
-      }
-    }
-    const maxWidth = `min(${width}%, calc(100% - ${marginX * 2}%))`
-    const maxHeight = `min(${maxHeightValue}%, calc(100% - ${marginY * 2}%))`
-    if (preset === 'corner') {
-      return {
-        width: maxWidth,
-        maxWidth,
-        maxHeight,
-        right: `${marginX + x}%`,
-        bottom: `${marginY + y}%`,
-      }
-    }
-    return {
-      width: maxWidth,
-      maxWidth,
-      maxHeight,
-      left: '50%',
-      top: `${50 + y}%`,
-      transform: 'translate(-50%, -50%)',
-    }
+  const updateActiveDropZone = (zone: DropZoneType | null) => {
+    activeDropZoneRef.current = zone
+    setActiveDropZone(zone)
   }
 
   useEffect(() => {
@@ -328,7 +352,6 @@ function App() {
     if (storedLocale === 'en' || storedLocale === 'ja') {
       setLocale(storedLocale)
     }
-    const storedRemember = localStorage.getItem('rememberOutputDir') === 'true'
     const storedOutputDir = localStorage.getItem('outputDir')
     const storedTemplate = localStorage.getItem('logoTemplatePreset')
     if (
@@ -340,12 +363,8 @@ function App() {
     ) {
       setSelectedTemplate(storedTemplate)
     }
-    if (storedRemember && storedOutputDir) {
+    if (storedOutputDir) {
       setOutputDir(storedOutputDir)
-      setLogoOutputDir(storedOutputDir)
-      setRememberOutputDir(true)
-    } else if (storedRemember) {
-      setRememberOutputDir(true)
     }
   }, [])
 
@@ -358,23 +377,41 @@ function App() {
   }, [selectedTemplate])
 
   useEffect(() => {
+    if (appTab !== 'template') {
+      return
+    }
     let cancelled = false
-    const probe = new Image()
-    probe.onload = () => {
-      if (!cancelled && probe.naturalHeight > 0) {
-        setLogoAspectRatio(probe.naturalWidth / probe.naturalHeight)
-      }
-    }
-    probe.onerror = () => {
-      if (!cancelled) {
-        setLogoAspectRatio(null)
-      }
-    }
-    probe.src = templateLogoSrc
+    setTemplatePreviewBusy(true)
+    setTemplatePreviewError(null)
+    void invoke<TemplatePreviewPayload>('render_template_previews', {
+      inputPath: inputPath ?? null,
+      logoPath: logoPath ?? null,
+      selectedPreset: selectedTemplate,
+      focus: focus ? { x: focus.x, y: focus.y } : null,
+      autoRemoveLogoBg,
+    })
+      .then((payload) => {
+        if (cancelled) {
+          return
+        }
+        setTemplatePreview(payload)
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return
+        }
+        setTemplatePreviewError(String(err))
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setTemplatePreviewBusy(false)
+        }
+      })
+
     return () => {
       cancelled = true
     }
-  }, [templateLogoSrc])
+  }, [appTab, autoRemoveLogoBg, focus, inputPath, logoPath, selectedTemplate])
 
   useEffect(() => {
     let unlistenProgress: (() => void) | null = null
@@ -410,15 +447,16 @@ function App() {
       .onDragDropEvent((event) => {
         const payload = event.payload
         if (payload.type === 'over') {
-          setActiveDropZone(resolveDropZoneFromPosition(payload.position))
+          updateActiveDropZone(resolveDropZoneFromPosition(payload.position))
           return
         }
         if (payload.type === 'leave') {
-          setActiveDropZone(null)
+          updateActiveDropZone(null)
           return
         }
         if (payload.type === 'drop') {
-          setActiveDropZone(null)
+          const zone = activeDropZoneRef.current ?? resolveDropZoneFromPosition(payload.position)
+          updateActiveDropZone(null)
           const first = payload.paths[0]
           if (!first) {
             return
@@ -427,12 +465,11 @@ function App() {
             void message(tr(locale, 'Unsupported file. Use png, jpg, jpeg, or webp.', '未対応ファイルです。png/jpg/jpeg/webp を使用してください。'))
             return
           }
-          const zone = resolveDropZoneFromPosition(payload.position)
-          if (zone === 'logo' || zone === 'logo_tool') {
-            setLogoFile(first)
+          if (!zone) {
+            void message(tr(locale, 'Drop the file onto the key art or logo field.', 'キーアート欄またはロゴ欄の上にドロップしてください。'))
             return
           }
-          if (!zone && appTab === 'logo_tool') {
+          if (zone === 'logo') {
             setLogoFile(first)
             return
           }
@@ -448,7 +485,7 @@ function App() {
         unlistenDrop()
       }
     }
-  }, [appTab, locale])
+  }, [locale])
 
   const pickImage = async (): Promise<string | null> => {
     const selected = await open({
@@ -486,63 +523,78 @@ function App() {
     }
   }
 
-  const handlePickOutput = async () => {
-    try {
-      const selected = await open({
-        multiple: false,
-        directory: true,
-      })
-      const resolved = resolveSelection(selected)
-      if (resolved) {
-        setOutputDir(resolved)
-      }
-    } catch (err) {
-      await message(`${tr(locale, 'Failed to open folder picker', 'フォルダ選択に失敗しました')}: ${String(err)}`)
-    }
-  }
-
-  const handlePickLogoOutput = async () => {
-    try {
-      const selected = await open({
-        multiple: false,
-        directory: true,
-      })
-      const resolved = resolveSelection(selected)
-      if (resolved) {
-        setLogoOutputDir(resolved)
-      }
-    } catch (err) {
-      await message(`${tr(locale, 'Failed to open folder picker', 'フォルダ選択に失敗しました')}: ${String(err)}`)
-    }
-  }
-
   const handleExport = async () => {
-    if (!inputPath || !outputDir) {
-      await message(tr(locale, 'Select an input image and output location first.', '先に入力画像と出力先を選択してください。'))
+    if (!inputPath) {
+      await message(tr(locale, 'Select an input image first.', '先に入力画像を選択してください。'))
       return
     }
     if (targetsToExport.length === 0) {
       await message(tr(locale, 'Select at least one output size.', '出力サイズを1つ以上選択してください。'))
       return
     }
-    setIsBusy(true)
-    setProgress(null)
+
+    let exportOutputDir: string
     try {
-      const exportedDir = await invoke<string>('export_images', {
+      const selected = await open({
+        multiple: false,
+        directory: true,
+        defaultPath: outputDir ?? undefined,
+      })
+      const resolved = resolveSelection(selected)
+      if (!resolved) {
+        return
+      }
+      exportOutputDir = resolved
+      setOutputDir(resolved)
+      localStorage.setItem('outputDir', resolved)
+    } catch (err) {
+      await message(`${tr(locale, 'Failed to open folder picker', 'フォルダ選択に失敗しました')}: ${String(err)}`)
+      return
+    }
+
+    try {
+      const preflight = await invoke<PreflightResult>('preflight_export', {
         inputPath,
         logoPath: logoPath ?? null,
         templatePreset: selectedTemplate,
-        outputDir,
+        outputDir: exportOutputDir,
+        targets: targetsToExport,
+        focus: focus ? { x: focus.x, y: focus.y } : null,
+      })
+      if (preflight.issues.length > 0) {
+        const lines = preflight.issues.map((issue) => `- ${preflightIssueLabel(locale, issue)}`)
+        await message(
+          `${tr(locale, 'Please fix these issues before export:', 'エクスポート前に次を修正してください:')}\n\n${lines.join('\n')}`,
+        )
+        return
+      }
+    } catch (err) {
+      await message(`${tr(locale, 'Preflight check failed', '事前チェックに失敗しました')}: ${String(err)}`)
+      return
+    }
+
+    setIsBusy(true)
+    setExportCompleted(false)
+    setProgress(null)
+    try {
+      let logoPathForExport = logoPath ?? null
+      if (logoPath && autoRemoveLogoBg) {
+        logoPathForExport = await invoke<string>('create_transparent_logo', {
+          logoPath,
+          outputDir: exportOutputDir,
+        })
+      }
+      const exportedDir = await invoke<string>('export_images', {
+        inputPath,
+        logoPath: logoPathForExport,
+        templatePreset: selectedTemplate,
+        outputDir: exportOutputDir,
         targets: targetsToExport,
         focus: focus ? { x: focus.x, y: focus.y } : null,
       })
       setLastOutputDir(exportedDir)
+      setExportCompleted(true)
       await message(tr(locale, 'Export complete.', 'エクスポート完了'))
-      try {
-        await openPath(exportedDir)
-      } catch (openErr) {
-        await message(`${tr(locale, 'Exported, but failed to open folder', '出力は完了しましたがフォルダを開けませんでした')}: ${String(openErr)}`)
-      }
     } catch (err) {
       await message(`${tr(locale, 'Export failed', 'エクスポートに失敗しました')}: ${String(err)}`)
     } finally {
@@ -550,28 +602,14 @@ function App() {
     }
   }
 
-  const handleCreateTransparentLogo = async () => {
-    if (!logoPath || !logoOutputDir) {
-      await message(tr(locale, 'Select a logo image and output location first.', '先にロゴ画像と保存先を選択してください。'))
+  const handleOpenLastOutput = async () => {
+    if (!lastOutputDir) {
       return
     }
-    setIsLogoBusy(true)
     try {
-      const outputPath = await invoke<string>('create_transparent_logo', {
-        logoPath,
-        outputDir: logoOutputDir,
-      })
-      setLastLogoOutputPath(outputPath)
-      await message(tr(locale, 'Transparent logo created.', '透過ロゴを作成しました。'))
-      try {
-        await openPath(outputPath)
-      } catch (openErr) {
-        await message(`${tr(locale, 'Created, but failed to open file', '作成しましたがファイルを開けませんでした')}: ${String(openErr)}`)
-      }
+      await openPath(lastOutputDir)
     } catch (err) {
-      await message(`${tr(locale, 'Transparent logo failed', '透過ロゴ作成に失敗しました')}: ${String(err)}`)
-    } finally {
-      setIsLogoBusy(false)
+      await message(`${tr(locale, 'Failed to open folder', 'フォルダを開けませんでした')}: ${String(err)}`)
     }
   }
 
@@ -605,26 +643,6 @@ function App() {
   const clearAllTargets = () => {
     setSelectedNames(new Set())
   }
-
-  const handleRememberOutputDir = (checked: boolean) => {
-    setRememberOutputDir(checked)
-    localStorage.setItem('rememberOutputDir', String(checked))
-    if (checked && outputDir) {
-      localStorage.setItem('outputDir', outputDir)
-    }
-    if (!checked) {
-      localStorage.removeItem('outputDir')
-    }
-  }
-
-  useEffect(() => {
-    if (!rememberOutputDir) {
-      return
-    }
-    if (outputDir) {
-      localStorage.setItem('outputDir', outputDir)
-    }
-  }, [outputDir, rememberOutputDir])
 
   const handlePreviewClick = (
     event: ReactMouseEvent<HTMLImageElement>,
@@ -671,15 +689,6 @@ function App() {
       </div>
       <header className="hero">
         <p className="eyebrow">{tr(locale, 'Steam Image Exporter', 'Steam Image Exporter')}</p>
-        <h1>{tr(locale, 'Generate every Steam size from a single key art image.', '1枚のキービジュアルからSteam向け各サイズを生成。')}</h1>
-        <p className="lede">
-          {tr(locale, 'Center-crop, Lanczos resize, PNG output. One click, no manual edits.', '中央切り抜き・Lanczosリサイズ・PNG出力。ワンクリックで作成。')}
-        </p>
-        <div className="hero__meta">
-          <span className="pill">{tr(locale, 'Center crop', '中央切り抜き')}</span>
-          <span className="pill">{tr(locale, 'Lanczos3 resize', 'Lanczos3リサイズ')}</span>
-          <span className="pill">{tr(locale, 'PNG output', 'PNG出力')}</span>
-        </div>
         <div className="tabs" role="tablist" aria-label={tr(locale, 'App tools', 'アプリ機能')}>
           <button
             type="button"
@@ -693,31 +702,22 @@ function App() {
           <button
             type="button"
             role="tab"
-            aria-selected={appTab === 'logo_tool'}
-            className={`tab${appTab === 'logo_tool' ? ' is-active' : ''}`}
-            onClick={() => setAppTab('logo_tool')}
-          >
-            {tr(locale, 'Logo Transparency', 'ロゴ透過')}
-          </button>
-          <button
-            type="button"
-            role="tab"
             aria-selected={appTab === 'template'}
             className={`tab${appTab === 'template' ? ' is-active' : ''}`}
             onClick={() => setAppTab('template')}
           >
-            {tr(locale, 'Template Preview', 'テンプレート確認')}
+            {tr(locale, 'Template', 'テンプレート')}
           </button>
         </div>
       </header>
 
       {appTab === 'export' ? (
-      <main className="layout">
+      <main className="layout layout--single">
         <section className="panel" aria-busy={isBusy}>
-          <div className="step" style={stepStyle(0)}>
+          <div className="step step--keyart" style={stepStyle(0)}>
             <div className="step__row">
               <div>
-                <p className="step__label">1 Input image</p>
+                <p className="step__label">{tr(locale, '1. Upload key art', '1. キーアートをアップロード')}</p>
                 <p className="step__hint">{tr(locale, 'png, jpg, jpeg, webp', 'png, jpg, jpeg, webp')}</p>
               </div>
               <button
@@ -752,6 +752,17 @@ function App() {
               </button>
             </div>
             <p className="path">{logoPath ?? tr(locale, 'Not selected', '未選択')}</p>
+            <label className="auto-toggle">
+              <input
+                type="checkbox"
+                checked={autoRemoveLogoBg}
+                onChange={(event) => setAutoRemoveLogoBg(event.target.checked)}
+                disabled={isBusy}
+              />
+              {autoRemoveLogoBg
+                ? tr(locale, 'Auto remove background (ON)', '背景透過を自動処理（ON）')
+                : tr(locale, 'Auto remove background (OFF)', '背景透過を自動処理（OFF）')}
+            </label>
             <div
               ref={logoDropZoneRef}
               className={`drop-zone${activeDropZone === 'logo' ? ' is-active' : ''}`}
@@ -797,56 +808,87 @@ function App() {
             <div className="step__row">
               <div>
                 <p className="step__label">Mode</p>
-                <p className="step__hint">{tr(locale, 'Choose how the output fills the frame.', 'フレームへの収め方を選択。')}</p>
+                <p className="step__hint">{tr(locale, 'Recommended: Fill (crop)', '推奨: Fill（切り抜き）')}</p>
               </div>
             </div>
             <div className="mode-select" role="group" aria-label={tr(locale, 'Export mode', '出力モード')}>
-              {(Object.keys(MODE_LABELS) as Target['mode'][]).map((mode) => (
-                <button
-                  key={mode}
-                  className={`mode-pill${exportMode === mode ? ' is-active' : ''}`}
-                  type="button"
-                  onClick={() => setExportMode(mode)}
-                  disabled={isBusy}
-                >
-                  {modeLabel(locale, mode)}
-                </button>
-              ))}
+              <button
+                className={`mode-pill${exportMode === 'fill' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => setExportMode('fill')}
+                disabled={isBusy}
+              >
+                {tr(locale, 'Recommended: Fill (crop)', '推奨: Fill（切り抜き）')}
+              </button>
+              <details className="mode-advanced">
+                <summary>{tr(locale, 'More options', 'その他のオプション')}</summary>
+                <div className="mode-advanced__list">
+                  {(['fit', 'fit_extend'] as Target['mode'][]).map((mode) => (
+                    <button
+                      key={mode}
+                      className={`mode-pill${exportMode === mode ? ' is-active' : ''}`}
+                      type="button"
+                      onClick={() => setExportMode(mode)}
+                      disabled={isBusy}
+                    >
+                      {modeLabel(locale, mode)}
+                    </button>
+                  ))}
+                </div>
+              </details>
             </div>
           </div>
 
           <div className="step" style={stepStyle(120)}>
-            <div className="step__row">
-              <div>
-                <p className="step__label">2 Output drive</p>
-                <p className="step__hint">
-                  {tr(locale, 'A new folder is created inside the selected location.', '選択した場所に新しいフォルダを作成します。')}
-                </p>
+            <details className="preset-advanced">
+              <summary>
+                {selectedNames.size === STEAM_TARGETS.length
+                  ? tr(locale, 'Steam outputs (All selected)', 'Steam出力（すべて選択中）')
+                  : tr(locale, `Steam outputs (${selectedNames.size} selected)`, `Steam出力（${selectedNames.size}件選択中）`)}
+              </summary>
+              <div className="card__head">
+                <h2>{tr(locale, 'Steam preset', 'Steamプリセット')}</h2>
+                <div className="card__actions">
+                  <button
+                    type="button"
+                    className="button button--ghost button--mini"
+                    onClick={selectAllTargets}
+                    disabled={isBusy}
+                  >
+                    {tr(locale, 'Select all', 'すべて選択')}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button--ghost button--mini"
+                    onClick={clearAllTargets}
+                    disabled={isBusy}
+                  >
+                    {tr(locale, 'Clear all', 'すべて解除')}
+                  </button>
+                </div>
               </div>
-              <button
-                className="button button--ghost"
-                onClick={handlePickOutput}
-                disabled={isBusy}
-              >
-                {tr(locale, 'Choose location', '保存先を選択')}
-              </button>
-            </div>
-            <p className="path">{outputDir ?? tr(locale, 'Not selected', '未選択')}</p>
-            <label className="remember">
-              <input
-                type="checkbox"
-                checked={rememberOutputDir}
-                onChange={(event) => handleRememberOutputDir(event.target.checked)}
-                disabled={isBusy}
-              />
-              {tr(locale, 'Remember output folder', '出力先を記憶')}
-            </label>
-            {lastOutputDir ? (
-              <p className="path path--note">{tr(locale, 'Last output', '前回出力')}: {lastOutputDir}</p>
-            ) : null}
+              <ul className="targets">
+                {STEAM_TARGETS.map((target) => (
+                  <li key={target.name}>
+                    <label className="targets__check">
+                      <input
+                        type="checkbox"
+                        checked={selectedNames.has(target.name)}
+                        onChange={() => toggleTarget(target.name)}
+                        disabled={isBusy}
+                      />
+                      <span className="targets__name">{target.name}</span>
+                    </label>
+                    <span className="targets__size">
+                      {target.w}x{target.h}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
           </div>
 
-          <div className="step step--cta" style={stepStyle(200)}>
+          <div className="step step--cta" style={stepStyle(160)}>
             <div className="step__row">
               <div>
                 <p className="step__label">3 Export</p>
@@ -859,13 +901,40 @@ function App() {
                 onClick={handleExport}
                 disabled={!canExport}
               >
-                {isBusy ? tr(locale, 'Exporting...', '出力中...') : tr(locale, 'Export Steam Set', 'Steam用セットを出力')}
+                {isBusy ? tr(locale, 'Exporting...', '出力中...') : tr(locale, 'Generate all Steam images', 'Steam画像を一括生成')}
               </button>
+            </div>
+            <p className="cta-subnote">PNG files</p>
+            <p className="note">
+              {tr(locale, 'Files are named automatically for Steam.', 'ファイル名はSteam向けに自動設定されます。')}
+            </p>
+            {lastOutputDir ? (
+              <p className="path path--note">{tr(locale, 'Last output', '前回出力')}: {lastOutputDir}</p>
+            ) : null}
+            <div className="card card--note">
+              <h3>{tr(locale, 'Output naming', '出力ファイル名')}</h3>
+              <p>{'{name}_{width}x{height}.png'}</p>
+              <p>{'{name}_{width}x{height}_logo.png'}</p>
+              <p className="note">
+                {tr(locale, 'For logo targets, both base and `_logo` files are generated.', 'ロゴ対象は通常版と`_logo`版の2枚を出力します。')}
+              </p>
             </div>
             <div className="status" data-busy={isBusy ? 'true' : 'false'}>
               <span className="status__dot" />
-              <span>{progressLabel ?? (isBusy ? tr(locale, 'Working...', '処理中...') : tr(locale, 'Idle', '待機中'))}</span>
+              <span>{progressLabel ?? exportStatusLabel}</span>
             </div>
+            {exportCompleted && lastOutputDir ? (
+              <div className="status-actions">
+                <button
+                  className="button button--ghost button--mini"
+                  type="button"
+                  onClick={handleOpenLastOutput}
+                  disabled={isBusy}
+                >
+                  Reveal in Finder / Open folder
+                </button>
+              </div>
+            ) : null}
             {isBusy ? (
               <div className="progress" style={progressStyle}>
                 <span className="progress__bar" />
@@ -873,247 +942,122 @@ function App() {
             ) : null}
           </div>
         </section>
-
-        <aside className="side">
-          <div className="card">
-            <div className="card__head">
-              <h2>{tr(locale, 'Steam preset', 'Steamプリセット')}</h2>
-              <div className="card__actions">
-                <button
-                  type="button"
-                  className="button button--ghost button--mini"
-                  onClick={selectAllTargets}
-                  disabled={isBusy}
-                >
-                  {tr(locale, 'Select all', 'すべて選択')}
-                </button>
-                <button
-                  type="button"
-                  className="button button--ghost button--mini"
-                  onClick={clearAllTargets}
-                  disabled={isBusy}
-                >
-                  {tr(locale, 'Clear all', 'すべて解除')}
-                </button>
-              </div>
-            </div>
-            <ul className="targets">
-              {STEAM_TARGETS.map((target) => (
-                <li key={target.name}>
-                  <label className="targets__check">
-                    <input
-                      type="checkbox"
-                      checked={selectedNames.has(target.name)}
-                      onChange={() => toggleTarget(target.name)}
-                      disabled={isBusy}
-                    />
-                    <span className="targets__name">{target.name}</span>
-                  </label>
-                  <span className="targets__size">
-                    {target.w}x{target.h}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="card card--note">
-            <h3>Output naming</h3>
-            <p>{'{name}_{width}x{height}.png'}</p>
-            <p>{'{name}_{width}x{height}_logo.png'}</p>
-            <p className="note">
-              {tr(locale, 'For logo targets, both base and `_logo` files are generated.', 'ロゴ対象は通常版と`_logo`版の2枚を出力します。')}
-            </p>
-          </div>
-        </aside>
       </main>
-      ) : appTab === 'logo_tool' ? (
-        <main className="layout layout--single">
-          <section className="panel" aria-busy={isLogoBusy}>
-            <div className="step" style={stepStyle(0)}>
-              <div className="step__row">
-                <div>
-                  <p className="step__label">1 Logo image</p>
-                  <p className="step__hint">{tr(locale, 'png, jpg, jpeg, webp', 'png, jpg, jpeg, webp')}</p>
-                </div>
-                <button
-                  className="button button--ghost"
-                  onClick={handlePickLogo}
-                  disabled={isLogoBusy}
-                >
-                  {tr(locale, 'Choose logo', 'ロゴを選択')}
-                </button>
-              </div>
-              <p className="path">{logoPath ?? tr(locale, 'Not selected', '未選択')}</p>
-              <div
-                ref={logoToolDropZoneRef}
-                className={`drop-zone${activeDropZone === 'logo_tool' ? ' is-active' : ''}`}
-              >
-                {tr(locale, 'Drag & drop logo here', 'ここにロゴをドラッグ&ドロップ')}
-              </div>
-            </div>
-
-            <div className="step" style={stepStyle(40)}>
-              <div className="step__row">
-                <div>
-                  <p className="step__label">2 Save location</p>
-                  <p className="step__hint">{tr(locale, 'Transparent PNG is saved as a new file.', '透過PNGを新規ファイルとして保存します。')}</p>
-                </div>
-                <button
-                  className="button button--ghost"
-                  onClick={handlePickLogoOutput}
-                  disabled={isLogoBusy}
-                >
-                  {tr(locale, 'Choose location', '保存先を選択')}
-                </button>
-              </div>
-              <p className="path">{logoOutputDir ?? tr(locale, 'Not selected', '未選択')}</p>
-              {lastLogoOutputPath ? (
-                <p className="path path--note">{tr(locale, 'Last output', '前回出力')}: {lastLogoOutputPath}</p>
-              ) : null}
-            </div>
-
-            {logoPreviewSrc ? (
-              <div className="step step--preview" style={stepStyle(80)}>
-                <div className="step__row">
-                  <div>
-                    <p className="step__label">Preview</p>
-                    <p className="step__hint">{tr(locale, 'Use this to verify source before processing.', '処理前に元画像を確認してください。')}</p>
-                  </div>
-                </div>
-                <div className="preview preview--checker">
-                  <img src={logoPreviewSrc} alt="Logo preview" />
-                </div>
-              </div>
-            ) : null}
-
-            <div className="step step--cta" style={stepStyle(120)}>
-              <div className="step__row">
-                <div>
-                  <p className="step__label">3 Create</p>
-                  <p className="step__hint">
-                    {isLogoBusy
-                      ? tr(locale, 'Removing background now.', '背景を透過処理中です。')
-                      : tr(locale, 'Auto-detect border color and save PNG.', '背景色を自動検知してPNG保存します。')}
-                  </p>
-                </div>
-                <button
-                  className="button button--primary"
-                  onClick={handleCreateTransparentLogo}
-                  disabled={!canCreateTransparentLogo}
-                >
-                  {isLogoBusy ? tr(locale, 'Processing...', '処理中...') : tr(locale, 'Create Transparent Logo', '透過ロゴを作成')}
-                </button>
-              </div>
-            </div>
-          </section>
-        </main>
       ) : (
-        <main className="layout layout--single">
-          <section className="panel">
-            <div className="step" style={stepStyle(0)}>
-              <div className="step__row">
-                <div>
-                  <p className="step__label">Template</p>
-                  <p className="step__hint">{tr(locale, 'Preview the 5 capsule images as one set.', '5種類カプセルを1セットで確認できます。')}</p>
-                </div>
+      <main className="layout layout--single">
+        <section className="panel">
+          <div className="step" style={stepStyle(0)}>
+            <div className="step__row">
+              <div>
+                <p className="step__label">{tr(locale, 'Template selection', 'テンプレート選択')}</p>
+                <p className="step__hint">{tr(locale, 'Select a logo placement pattern for export.', '出力時のロゴ配置パターンを選択します。')}</p>
               </div>
-              <div className="template-preset-list" role="radiogroup" aria-label={tr(locale, 'Logo template preset', 'ロゴテンプレート')}>
-                {TEMPLATE_PRESETS.map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    className={`template-preset${selectedTemplate === preset ? ' is-active' : ''}`}
-                    onClick={() => setSelectedTemplate(preset)}
-                  >
-                    <div className="template-preset__preview" aria-hidden="true">
-                      {canRenderTemplatePreview ? (
-                        <>
+            </div>
+            <div className="template-preset-list" role="radiogroup" aria-label={tr(locale, 'Logo template preset', 'ロゴテンプレート')}>
+              {TEMPLATE_PRESETS.map((preset) => (
+                (() => {
+                  const previewCard = templatePreview?.cards.find((card) => card.preset === preset)
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      className={`template-preset${selectedTemplate === preset ? ' is-active' : ''}`}
+                      onClick={() => setSelectedTemplate(preset)}
+                    >
+                      <div className="template-preset__preview" aria-hidden="true">
+                        {previewCard ? (
                           <img
-                            src={templateKeyartSrc}
+                            src={previewCard.data_url}
                             alt=""
                             className="template-preset__preview-bg"
                           />
-                          <img
-                            src={templateLogoSrc}
-                            alt=""
-                            className="template-preset__preview-logo"
-                            style={getTemplateOverlayStyle('header_capsule', preset)}
-                          />
-                        </>
-                      ) : (
-                        <span className="template-preset__preview-empty">
-                          {tr(locale, 'Select key art + logo to preview', 'key art と logo を選択してプレビュー')}
-                        </span>
-                      )}
+                        ) : (
+                          <>
+                            <img
+                              src={templateKeyartSrc}
+                              alt=""
+                              className="template-preset__preview-bg"
+                            />
+                            <img
+                              src={templateLogoSrc}
+                              alt=""
+                              className="template-preset__preview-logo"
+                              style={getTemplateOverlayStyle('header_capsule', preset)}
+                            />
+                          </>
+                        )}
+                      </div>
+                      <span className="template-preset__title">{templatePresetMeta(locale, preset).title}</span>
+                      <span className="template-preset__desc">{templatePresetMeta(locale, preset).description}</span>
+                    </button>
+                  )
+                })()
+              ))}
+            </div>
+            {templatePreviewError ? (
+              <p className="drop-hint">
+                {tr(locale, 'Preview render failed.', 'プレビュー生成に失敗しました。')} {templatePreviewError}
+              </p>
+            ) : null}
+            {!templatePreview && templatePreviewBusy ? (
+              <p className="drop-hint">
+                {tr(locale, 'Rendering high quality previews in the background.', '高品質プレビューをバックグラウンドで生成中です。')}
+              </p>
+            ) : null}
+          </div>
+          <div className="step step--preview" style={stepStyle(40)}>
+            <div className="step__row">
+              <div>
+                <p className="step__label">{tr(locale, 'Preview set', 'プレビューセット')}</p>
+                <p className="step__hint">{tr(locale, 'Header / Small / Main / Vertical / Library', 'Header / Small / Main / Vertical / Library')}</p>
+              </div>
+            </div>
+            {templatePreview ? (
+              <div className="template-grid">
+                {templatePreview.set.map((target) => (
+                  <figure key={target.name} className={`template-item template-item--${target.name}`}>
+                    <div
+                      className="template-item__canvas"
+                      style={{ aspectRatio: `${target.width} / ${target.height}` }}
+                    >
+                      <img
+                        src={target.data_url}
+                        alt={`${target.name} preview`}
+                        className="template-item__bg"
+                      />
                     </div>
-                    <span className="template-preset__title">{templatePresetMeta(locale, preset).title}</span>
-                    <span className="template-preset__desc">{templatePresetMeta(locale, preset).description}</span>
-                  </button>
+                    <figcaption>{target.name} ({target.width}x{target.height})</figcaption>
+                  </figure>
                 ))}
               </div>
-            </div>
-
-            <div className="step" style={stepStyle(40)}>
-              <div className="step__row">
-                <div>
-                  <p className="step__label">Inputs</p>
-                  <p className="step__hint">{tr(locale, 'Swap images in this tab to check samples.', 'このタブで画像を差し替えてサンプル確認できます。')}</p>
-                </div>
-                <div className="card__actions">
-                  <button
-                    className="button button--ghost button--mini"
-                    onClick={handlePickInput}
-                  >
-                    {tr(locale, 'Key art', 'キービジュアル')}
-                  </button>
-                  <button
-                    className="button button--ghost button--mini"
-                    onClick={handlePickLogo}
-                  >
-                    {tr(locale, 'Logo', 'ロゴ')}
-                  </button>
-                </div>
-              </div>
-              <p className="path">{tr(locale, 'Art', 'キービジュアル')}: {inputPath ?? tr(locale, 'Not selected', '未選択')}</p>
-              <p className="path">{tr(locale, 'Logo', 'ロゴ')}: {logoPath ?? tr(locale, 'Not selected', '未選択')}</p>
-            </div>
-
-            {canRenderTemplatePreview ? (
-              <div className="step step--preview" style={stepStyle(80)}>
-                <div className="step__row">
-                  <div>
-                    <p className="step__label">Sample Set</p>
-                    <p className="step__hint">{tr(locale, 'Preview header/small/main/vertical/library.', 'header/small/main/vertical/library の5点をプレビュー。')}</p>
-                  </div>
-                </div>
-                <div className="template-grid">
-                  {LOGO_TEMPLATE_TARGETS.map((target) => (
-                    <figure key={target.name} className={`template-item template-item--${target.name}`}>
-                      <div
-                        className="template-item__canvas"
-                        style={{ aspectRatio: `${target.w} / ${target.h}` }}
-                      >
-                        <img src={templateKeyartSrc} alt={`${target.name} base`} className="template-item__bg" />
-                        <img
-                          src={templateLogoSrc}
-                          alt={`${target.name} logo`}
-                          className="template-item__logo"
-                          style={getTemplateOverlayStyle(target.name, selectedTemplate)}
-                        />
-                      </div>
-                      <figcaption>{target.name} ({target.w}x{target.h})</figcaption>
-                    </figure>
-                  ))}
-                </div>
-              </div>
             ) : (
-              <div className="step" style={stepStyle(80)}>
-                <p className="drop-hint">{tr(locale, 'If sample images fail to load, select key art and logo manually.', 'サンプル画像を読み込めない場合は key art と logo を選択してください。')}</p>
+              <div className="template-grid">
+                {LOGO_TEMPLATE_TARGETS.map((target) => (
+                  <figure key={target.name} className={`template-item template-item--${target.name}`}>
+                    <div
+                      className="template-item__canvas"
+                      style={{ aspectRatio: `${target.w} / ${target.h}` }}
+                    >
+                      <img
+                        src={templateKeyartSrc}
+                        alt={`${target.name} preview`}
+                        className="template-item__bg"
+                      />
+                      <img
+                        src={templateLogoSrc}
+                        alt=""
+                        className="template-item__logo"
+                        style={getTemplateOverlayStyle(target.name, selectedTemplate)}
+                      />
+                    </div>
+                    <figcaption>{target.name} ({target.w}x{target.h})</figcaption>
+                  </figure>
+                ))}
               </div>
             )}
-          </section>
-        </main>
+          </div>
+        </section>
+      </main>
       )}
     </div>
   )

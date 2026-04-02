@@ -23,6 +23,12 @@
   --accent: #65b8ff;
 }
 
+html {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 *,
 *::before,
 *::after {
@@ -31,9 +37,12 @@
 
 body {
   margin: 0;
-  min-height: 100vh;
-  background: radial-gradient(circle at top right, rgba(77, 129, 191, 0.26), transparent 55%),
-    radial-gradient(circle at 20% 10%, rgba(50, 96, 158, 0.24), transparent 45%),
+  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: radial-gradient(circle at top right, rgba(77, 129, 191, 0.16), transparent 55%),
+    radial-gradient(circle at 20% 10%, rgba(50, 96, 158, 0.14), transparent 45%),
     linear-gradient(180deg, var(--bg), var(--bg-deep));
   color: var(--ink);
 }
@@ -44,8 +53,8 @@ body::before {
   inset: 0;
   background: repeating-linear-gradient(
     120deg,
-    rgba(140, 170, 220, 0.05) 0,
-    rgba(140, 170, 220, 0.05) 1px,
+    rgba(140, 170, 220, 0.025) 0,
+    rgba(140, 170, 220, 0.025) 1px,
     transparent 1px,
     transparent 18px
   );
@@ -56,7 +65,12 @@ body::before {
 #root {
   position: relative;
   z-index: 1;
-  min-height: 100vh;
+  min-height: 100%;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: none;
+  -webkit-overflow-scrolling: touch;
 }
 
 a {

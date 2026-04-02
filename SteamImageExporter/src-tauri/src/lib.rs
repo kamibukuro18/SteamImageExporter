@@ -1,12 +1,17 @@
 use anyhow::{bail, Context, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use image::{
   imageops::{self, FilterType},
   DynamicImage, GenericImageView, ImageFormat, Rgba, RgbaImage,
 };
 use serde::{Deserialize, Serialize};
+use std::io::Cursor;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Emitter;
+
+const SAMPLE_KEYART_BYTES: &[u8] = include_bytes!("../../public/template-samples/keyart-sample.png");
+const SAMPLE_LOGO_BYTES: &[u8] = include_bytes!("../../public/template-samples/logo-sample.png");
 
 #[derive(Deserialize, Copy, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -46,6 +51,31 @@ struct ProgressPayload {
   total: usize,
   name: String,
   phase: &'static str,
+}
+
+#[derive(Serialize)]
+struct PreflightResult {
+  issues: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct TemplatePreviewCardPayload {
+  preset: String,
+  data_url: String,
+}
+
+#[derive(Serialize)]
+struct TemplatePreviewImagePayload {
+  name: String,
+  width: u32,
+  height: u32,
+  data_url: String,
+}
+
+#[derive(Serialize)]
+struct TemplatePreviewPayload {
+  cards: Vec<TemplatePreviewCardPayload>,
+  set: Vec<TemplatePreviewImagePayload>,
 }
 
 #[derive(Copy, Clone)]
@@ -123,6 +153,52 @@ async fn create_transparent_logo(
 ) -> Result<String, String> {
   tauri::async_runtime::spawn_blocking(move || {
     create_transparent_logo_inner(&logo_path, &output_dir)
+  })
+  .await
+  .map_err(|err| err.to_string())?
+  .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+async fn preflight_export(
+  input_path: String,
+  logo_path: Option<String>,
+  template_preset: Option<TemplatePreset>,
+  output_dir: String,
+  targets: Vec<Target>,
+  focus: Option<Focus>,
+) -> Result<PreflightResult, String> {
+  tauri::async_runtime::spawn_blocking(move || {
+    Ok::<PreflightResult, anyhow::Error>(preflight_export_inner(
+      &input_path,
+      logo_path.as_deref(),
+      template_preset.unwrap_or(TemplatePreset::Balanced),
+      &output_dir,
+      &targets,
+      focus,
+    ))
+  })
+  .await
+  .map_err(|err| err.to_string())?
+  .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+async fn render_template_previews(
+  input_path: Option<String>,
+  logo_path: Option<String>,
+  selected_preset: TemplatePreset,
+  focus: Option<Focus>,
+  auto_remove_logo_bg: bool,
+) -> Result<TemplatePreviewPayload, String> {
+  tauri::async_runtime::spawn_blocking(move || {
+    render_template_previews_inner(
+      input_path.as_deref(),
+      logo_path.as_deref(),
+      selected_preset,
+      focus,
+      auto_remove_logo_bg,
+    )
   })
   .await
   .map_err(|err| err.to_string())?
@@ -268,6 +344,229 @@ fn create_transparent_logo_inner(logo_path: &str, output_dir: &str) -> Result<St
     .with_context(|| format!("save failed: {}", output_path.display()))?;
 
   Ok(output_path.to_string_lossy().to_string())
+}
+
+fn render_template_previews_inner(
+  input_path: Option<&str>,
+  logo_path: Option<&str>,
+  selected_preset: TemplatePreset,
+  focus: Option<Focus>,
+  auto_remove_logo_bg: bool,
+) -> Result<TemplatePreviewPayload> {
+  let source = load_preview_source(input_path, SAMPLE_KEYART_BYTES, "sample key art")?;
+  let logo_source = load_preview_source(logo_path, SAMPLE_LOGO_BYTES, "sample logo")?;
+  let logo_source = maybe_auto_remove_logo(logo_source, auto_remove_logo_bg);
+
+  let cards = [
+    TemplatePreset::Balanced,
+    TemplatePreset::Impact,
+    TemplatePreset::Compact,
+    TemplatePreset::Cinematic,
+    TemplatePreset::Corner,
+  ]
+  .into_iter()
+  .map(|preset| {
+    let rendered = render_template_preview_image(
+      &source,
+      &logo_source,
+      "header_capsule",
+      920,
+      430,
+      preset,
+      focus,
+    );
+    Ok(TemplatePreviewCardPayload {
+      preset: template_preset_key(preset).to_string(),
+      data_url: encode_png_data_url(&rendered)?,
+    })
+  })
+  .collect::<Result<Vec<_>>>()?;
+
+  let set = [
+    ("header_capsule", 920, 430),
+    ("small_capsule", 462, 174),
+    ("main_capsule", 1232, 706),
+    ("vertical_capsule", 748, 896),
+    ("library_capsule", 600, 900),
+  ]
+  .into_iter()
+  .map(|(name, width, height)| {
+    let rendered = render_template_preview_image(
+      &source,
+      &logo_source,
+      name,
+      width,
+      height,
+      selected_preset,
+      focus,
+    );
+    Ok(TemplatePreviewImagePayload {
+      name: name.to_string(),
+      width,
+      height,
+      data_url: encode_png_data_url(&rendered)?,
+    })
+  })
+  .collect::<Result<Vec<_>>>()?;
+
+  Ok(TemplatePreviewPayload { cards, set })
+}
+
+fn load_preview_source(
+  path: Option<&str>,
+  sample_bytes: &[u8],
+  sample_name: &str,
+) -> Result<DynamicImage> {
+  match path.filter(|value| !value.trim().is_empty()) {
+    Some(path) => image::open(path).with_context(|| format!("open failed: {}", path)),
+    None => image::load_from_memory(sample_bytes)
+      .with_context(|| format!("load failed: {}", sample_name)),
+  }
+}
+
+fn maybe_auto_remove_logo(image: DynamicImage, enabled: bool) -> DynamicImage {
+  if !enabled {
+    return image;
+  }
+  let mut rgba = image.to_rgba8();
+  auto_remove_background(&mut rgba);
+  DynamicImage::ImageRgba8(rgba)
+}
+
+fn render_template_preview_image(
+  source: &DynamicImage,
+  logo_source: &DynamicImage,
+  target_name: &str,
+  target_w: u32,
+  target_h: u32,
+  template_preset: TemplatePreset,
+  focus: Option<Focus>,
+) -> DynamicImage {
+  let target = Target {
+    name: target_name.to_string(),
+    w: target_w,
+    h: target_h,
+    mode: Mode::Fill,
+  };
+  let base_rendered = render_target(source, &target, focus.as_ref());
+  match logo_usage_for_target(target_name, template_preset) {
+    LogoUsage::Overlay(pattern) => {
+      apply_logo_template(base_rendered, logo_source, target_name, pattern)
+    }
+    LogoUsage::LogoOnly => render_logo_only_target(logo_source, &target),
+    LogoUsage::None => base_rendered,
+  }
+}
+
+fn encode_png_data_url(image: &DynamicImage) -> Result<String> {
+  let mut cursor = Cursor::new(Vec::new());
+  image
+    .write_to(&mut cursor, ImageFormat::Png)
+    .context("encode preview png failed")?;
+  Ok(format!(
+    "data:image/png;base64,{}",
+    BASE64.encode(cursor.into_inner())
+  ))
+}
+
+fn template_preset_key(preset: TemplatePreset) -> &'static str {
+  match preset {
+    TemplatePreset::Balanced => "balanced",
+    TemplatePreset::Impact => "impact",
+    TemplatePreset::Compact => "compact",
+    TemplatePreset::Cinematic => "cinematic",
+    TemplatePreset::Corner => "corner",
+  }
+}
+
+fn preflight_export_inner(
+  input_path: &str,
+  logo_path: Option<&str>,
+  template_preset: TemplatePreset,
+  output_dir: &str,
+  targets: &[Target],
+  focus: Option<Focus>,
+) -> PreflightResult {
+  let mut issues = Vec::new();
+
+  if input_path.trim().is_empty() {
+    issues.push("input_missing".to_string());
+  }
+
+  let input_dimensions = if input_path.trim().is_empty() {
+    None
+  } else {
+    let input_file = Path::new(input_path);
+    if !input_file.is_file() {
+      issues.push("input_not_found".to_string());
+      None
+    } else {
+      match image::image_dimensions(input_path) {
+        Ok(dimensions) => Some(dimensions),
+        Err(_) => {
+          issues.push("input_not_readable".to_string());
+          None
+        }
+      }
+    }
+  };
+
+  if targets.is_empty() {
+    issues.push("targets_empty".to_string());
+  }
+
+  if let (Some((width, height)), Some(point)) = (input_dimensions, focus) {
+    if point.x >= width || point.y >= height {
+      issues.push("focus_out_of_bounds".to_string());
+    }
+  }
+
+  let output_root = Path::new(output_dir);
+  if output_dir.trim().is_empty() || !output_root.exists() {
+    issues.push("output_dir_missing".to_string());
+  } else if !output_root.is_dir() {
+    issues.push("output_dir_not_directory".to_string());
+  } else if !can_write_to_dir(output_root) {
+    issues.push("output_dir_not_writable".to_string());
+  }
+
+  let requires_logo = targets
+    .iter()
+    .any(|target| !matches!(logo_usage_for_target(&target.name, template_preset), LogoUsage::None));
+  if requires_logo {
+    let Some(logo_path) = logo_path.filter(|value| !value.trim().is_empty()) else {
+      issues.push("logo_required".to_string());
+      return PreflightResult { issues };
+    };
+
+    let logo_file = Path::new(logo_path);
+    if !logo_file.is_file() {
+      issues.push("logo_not_found".to_string());
+    } else if image::image_dimensions(logo_path).is_err() {
+      issues.push("logo_not_readable".to_string());
+    }
+  }
+
+  PreflightResult { issues }
+}
+
+fn can_write_to_dir(dir: &Path) -> bool {
+  let stamp = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .unwrap_or_default()
+    .as_millis();
+  let probe_path = dir.join(format!(".steam_image_exporter_probe_{}", stamp));
+  let created = std::fs::OpenOptions::new()
+    .create_new(true)
+    .write(true)
+    .open(&probe_path);
+  match created {
+    Ok(_) => {
+      let _ = std::fs::remove_file(&probe_path);
+      true
+    }
+    Err(_) => false,
+  }
 }
 
 fn render_target(source: &DynamicImage, target: &Target, focus: Option<&Focus>) -> DynamicImage {
@@ -682,7 +981,12 @@ pub fn run() {
       }
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![export_images, create_transparent_logo])
+    .invoke_handler(tauri::generate_handler![
+      export_images,
+      create_transparent_logo,
+      preflight_export,
+      render_template_previews
+    ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
