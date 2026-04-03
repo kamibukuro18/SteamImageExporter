@@ -1,0 +1,14 @@
+{
+  "appName": "Steam Image Exporter",
+  "appVersion": "0.1.0",
+  "authorName": "GAI",
+  "authorBio": "個人開発ツールや実験的なアプリを作っています。",
+  "profileUrl": "https://github.com/kamibukuro18",
+  "moreToolsUrl": "https://github.com/kamibukuro18?tab=repositories",
+  "supportUrl": "https://gumroad.com/",
+  "gumroadUrl": "https://gumroad.com/",
+  "githubRepoUrl": "https://github.com/kamibukuro18/SteamImageExporter",
+  "githubProfileUrl": "https://github.com/kamibukuro18",
+  "githubReleasesApiUrl": "https://api.github.com/repos/kamibukuro18/SteamImageExporter/releases/latest",
+  "githubReleasesUrl": "https://github.com/kamibukuro18/SteamImageExporter/releases"
+}

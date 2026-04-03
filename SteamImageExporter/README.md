@@ -1,73 +1,79 @@
-# React + TypeScript + Vite
+# Steam Image Exporter
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Steam 用の主要画像セットをまとめて生成するデスクトップアプリです。キーアートを読み込み、必要に応じてロゴを重ね、Steam 向けの各サイズを一括で出力します。
 
-Currently, two official plugins are available:
+## Main Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Key art から Steam 用画像を一括生成
+- ロゴ画像のドラッグ&ドロップ対応
+- ロゴ背景透過の自動処理
+- テンプレート別のロゴ配置プレビュー
+- 出力前のプリフライトチェック
+- 作者情報 / 他ツール / 支援導線を `Info` に集約
+- GitHub Releases ベースの更新確認
 
-## React Compiler
+## Info / Updates
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+アプリ右上の `Info` から以下を確認できます。
 
-## Expanding the ESLint configuration
+- 作者情報
+- GitHub プロフィール / リポジトリへの導線
+- More Tools / Support への導線
+- 最新リリース情報
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+更新情報は GitHub Releases API を使って取得します。
+アプリ起動時に静かに確認し、より新しいバージョンがある場合のみ `Info` ボタン横に小さく `NEW` を表示します。
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Metadata / Version Management
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+設定値は `src/config/app-metadata.json` に集約しています。
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+含まれる内容:
+
+- app name
+- app version
+- author name
+- profile url
+- gumroad / support url
+- github repo url
+- github releases api url
+- github releases page url
+
+ビルド前に `npm run sync:metadata` が走り、以下へバージョンとアプリ名を同期します。
+
+- `package.json`
+- `package-lock.json`
+- `src-tauri/tauri.conf.json`
+
+## Development
+
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Build
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run build
+npm run tauri build
 ```
+
+## Release Operations
+
+今後の配布と更新確認は GitHub Releases ベースを前提にします。
+
+運用手順:
+
+1. `src/config/app-metadata.json` の `appVersion` を更新
+2. 必要なら作者リンクやリリース URL を更新
+3. `npm run build` で動作確認
+4. GitHub にタグ付きで push する、または Actions から各 OS 向けビルドを作る
+5. GitHub Releases を作成し、タイトルと本文を記載する
+6. アプリ内の `Info` > `Updates` から最新リリース内容を確認できる
+
+## Notes
+
+- 外部リンクは既定ブラウザで開きます
+- 更新取得に失敗しても、通常の画像生成機能はそのまま使えます
+- 自動アップデーター、ログイン、課金認証は含みません

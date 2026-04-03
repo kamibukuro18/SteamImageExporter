@@ -4,7 +4,8 @@ import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { message, open } from '@tauri-apps/plugin-dialog'
-import { open as openPath } from '@tauri-apps/plugin-shell'
+import { open as openShell } from '@tauri-apps/plugin-shell'
+import { APP_META } from './config/appMeta'
 import './App.css'
 
 type Target = {
@@ -55,6 +56,13 @@ type TemplatePreviewImage = {
 type TemplatePreviewPayload = {
   cards: TemplatePreviewCard[]
   set: TemplatePreviewImage[]
+}
+
+type ReleaseInfo = {
+  version: string
+  title: string
+  body: string
+  url: string
 }
 
 type DropZoneType = 'input' | 'logo'
@@ -248,6 +256,40 @@ const preflightIssueLabel = (locale: Locale, issue: string): string => {
   }
 }
 
+const normalizeVersion = (value: string): string => (
+  value.trim().replace(/^v/i, '').split('-')[0]
+)
+
+const compareVersions = (left: string, right: string): number => {
+  const leftParts = normalizeVersion(left).split('.').map((part) => Number.parseInt(part, 10) || 0)
+  const rightParts = normalizeVersion(right).split('.').map((part) => Number.parseInt(part, 10) || 0)
+  const length = Math.max(leftParts.length, rightParts.length)
+  for (let index = 0; index < length; index += 1) {
+    const leftValue = leftParts[index] ?? 0
+    const rightValue = rightParts[index] ?? 0
+    if (leftValue > rightValue) return 1
+    if (leftValue < rightValue) return -1
+  }
+  return 0
+}
+
+const summarizeReleaseBody = (value: string): string => {
+  const cleaned = value
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+  if (!cleaned) {
+    return 'No release notes provided.'
+  }
+  if (cleaned.length <= 280) {
+    return cleaned
+  }
+  return `${cleaned.slice(0, 277).trimEnd()}...`
+}
+
 function App() {
   const [locale, setLocale] = useState<Locale>('en')
   const [appTab, setAppTab] = useState<AppTab>('export')
@@ -274,11 +316,16 @@ function App() {
   const [templatePreview, setTemplatePreview] = useState<TemplatePreviewPayload | null>(null)
   const [templatePreviewBusy, setTemplatePreviewBusy] = useState(false)
   const [templatePreviewError, setTemplatePreviewError] = useState<string | null>(null)
+  const [isInfoOpen, setIsInfoOpen] = useState(false)
+  const [latestRelease, setLatestRelease] = useState<ReleaseInfo | null>(null)
+  const [updatesBusy, setUpdatesBusy] = useState(false)
+  const [updatesError, setUpdatesError] = useState<string | null>(null)
 
   const previewSrc = inputPath ? convertFileSrc(inputPath) : null
   const logoPreviewSrc = logoPath ? convertFileSrc(logoPath) : null
   const templateKeyartSrc = previewSrc ?? TEMPLATE_SAMPLE_KEYART
   const templateLogoSrc = logoPreviewSrc ?? TEMPLATE_SAMPLE_LOGO
+  const currentVersion = APP_META.appVersion
   const targetsToExport = STEAM_TARGETS.filter((target) =>
     selectedNames.has(target.name),
   ).map((target) => ({
@@ -286,6 +333,9 @@ function App() {
     mode: exportMode,
   }))
   const canExport = Boolean(inputPath && !isBusy)
+  const isUpdateAvailable = latestRelease
+    ? compareVersions(latestRelease.version, currentVersion) > 0
+    : false
   const focusMarkerStyle =
     focus && imageMeta
       ? {
@@ -307,6 +357,51 @@ function App() {
     if (exportCompleted) return 'Done'
     return 'Ready'
   })()
+
+  const fetchLatestRelease = async () => {
+    setUpdatesBusy(true)
+    setUpdatesError(null)
+    try {
+      const response = await fetch(APP_META.githubReleasesApiUrl, {
+        headers: {
+          Accept: 'application/vnd.github+json',
+        },
+      })
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+      const payload = await response.json() as {
+        tag_name?: string
+        name?: string
+        body?: string
+        html_url?: string
+      }
+      const version = normalizeVersion(payload.tag_name ?? payload.name ?? '')
+      if (!version) {
+        throw new Error('missing release version')
+      }
+      setLatestRelease({
+        version,
+        title: payload.name?.trim() || payload.tag_name?.trim() || `v${version}`,
+        body: summarizeReleaseBody(payload.body ?? ''),
+        url: payload.html_url ?? APP_META.githubReleasesUrl,
+      })
+    } catch (err) {
+      console.error('Failed to fetch latest release', err)
+      setLatestRelease(null)
+      setUpdatesError(tr(locale, 'Could not fetch updates.', '更新情報を取得できませんでした。'))
+    } finally {
+      setUpdatesBusy(false)
+    }
+  }
+
+  const handleOpenExternal = async (url: string) => {
+    try {
+      await openShell(url)
+    } catch (err) {
+      await message(`${tr(locale, 'Failed to open link', 'リンクを開けませんでした')}: ${String(err)}`)
+    }
+  }
 
   const setInputFile = (path: string) => {
     setInputPath(path)
@@ -375,6 +470,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem('logoTemplatePreset', selectedTemplate)
   }, [selectedTemplate])
+
+  useEffect(() => {
+    void fetchLatestRelease()
+  }, [])
 
   useEffect(() => {
     if (appTab !== 'template') {
@@ -607,7 +706,7 @@ function App() {
       return
     }
     try {
-      await openPath(lastOutputDir)
+      await openShell(lastOutputDir)
     } catch (err) {
       await message(`${tr(locale, 'Failed to open folder', 'フォルダを開けませんでした')}: ${String(err)}`)
     }
@@ -671,20 +770,34 @@ function App() {
 
   return (
     <div className="app">
-      <div className="lang-switch" role="group" aria-label="Language switch">
+      <div className="topbar">
+        <div className="topbar__group" role="group" aria-label="Language switch">
+          <button
+            type="button"
+            className={`lang-btn${locale === 'en' ? ' is-active' : ''}`}
+            onClick={() => setLocale('en')}
+          >
+            English
+          </button>
+          <button
+            type="button"
+            className={`lang-btn${locale === 'ja' ? ' is-active' : ''}`}
+            onClick={() => setLocale('ja')}
+          >
+            日本語
+          </button>
+        </div>
         <button
           type="button"
-          className={`lang-btn${locale === 'en' ? ' is-active' : ''}`}
-          onClick={() => setLocale('en')}
+          className="info-button"
+          onClick={() => setIsInfoOpen(true)}
         >
-          English
-        </button>
-        <button
-          type="button"
-          className={`lang-btn${locale === 'ja' ? ' is-active' : ''}`}
-          onClick={() => setLocale('ja')}
-        >
-          日本語
+          {tr(locale, 'Info', 'Info')}
+          {isUpdateAvailable ? (
+            <span className="info-button__badge">
+              {tr(locale, 'NEW', 'NEW')}
+            </span>
+          ) : null}
         </button>
       </div>
       <header className="hero">
@@ -1059,6 +1172,130 @@ function App() {
         </section>
       </main>
       )}
+
+      {isInfoOpen ? (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={() => setIsInfoOpen(false)}
+        >
+          <section
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="info-panel-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-panel__header">
+              <div>
+                <p className="modal-panel__eyebrow">{tr(locale, 'Info', 'Info')}</p>
+                <h2 id="info-panel-title">{APP_META.appName}</h2>
+              </div>
+              <button
+                type="button"
+                className="button button--ghost button--mini"
+                onClick={() => setIsInfoOpen(false)}
+              >
+                {tr(locale, 'Close', '閉じる')}
+              </button>
+            </div>
+
+            <div className="modal-panel__section">
+              <p className="modal-panel__meta">
+                {tr(locale, 'By', '作者')}: {APP_META.authorName} · v{currentVersion}
+              </p>
+              <p className="note">{APP_META.authorBio}</p>
+              <div className="modal-panel__actions">
+                <button
+                  type="button"
+                  className="button button--ghost button--mini"
+                  onClick={() => void handleOpenExternal(APP_META.profileUrl)}
+                >
+                  {tr(locale, 'Profile', 'プロフィール')}
+                </button>
+                <button
+                  type="button"
+                  className="button button--ghost button--mini"
+                  onClick={() => void handleOpenExternal(APP_META.githubRepoUrl)}
+                >
+                  GitHub Repo
+                </button>
+                <button
+                  type="button"
+                  className="button button--ghost button--mini"
+                  onClick={() => void handleOpenExternal(APP_META.moreToolsUrl)}
+                >
+                  {tr(locale, 'More Tools', 'More Tools')}
+                </button>
+                <button
+                  type="button"
+                  className="button button--ghost button--mini"
+                  onClick={() => void handleOpenExternal(APP_META.gumroadUrl)}
+                >
+                  Gumroad
+                </button>
+                <button
+                  type="button"
+                  className="button button--ghost button--mini"
+                  onClick={() => void handleOpenExternal(APP_META.supportUrl)}
+                >
+                  {tr(locale, 'Support the creator', '作者を支援')}
+                </button>
+              </div>
+            </div>
+
+            <div className="modal-panel__section">
+              <div className="modal-panel__row">
+                <div>
+                  <p className="step__label">{tr(locale, 'Updates', 'Updates')}</p>
+                  <p className="step__hint">
+                    {tr(locale, 'Checks the latest GitHub Release when needed.', '必要なときにGitHub Releasesの最新情報を確認します。')}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="button button--ghost button--mini"
+                  onClick={() => void fetchLatestRelease()}
+                  disabled={updatesBusy}
+                >
+                  {updatesBusy
+                    ? tr(locale, 'Checking...', '確認中...')
+                    : tr(locale, 'Check again', '再確認')}
+                </button>
+              </div>
+              <div className="modal-panel__version-list">
+                <p>
+                  <span>{tr(locale, 'Current version', '現在のバージョン')}</span>
+                  <strong>v{currentVersion}</strong>
+                </p>
+                <p>
+                  <span>{tr(locale, 'Latest version', '最新バージョン')}</span>
+                  <strong>{latestRelease ? `v${latestRelease.version}` : '—'}</strong>
+                </p>
+              </div>
+              {isUpdateAvailable ? (
+                <p className="update-pill">{tr(locale, 'Update available', '更新あり')}</p>
+              ) : null}
+              {latestRelease ? (
+                <div className="modal-panel__release">
+                  <p className="modal-panel__release-title">{latestRelease.title}</p>
+                  <p className="note">{latestRelease.body}</p>
+                  <button
+                    type="button"
+                    className="button button--ghost button--mini"
+                    onClick={() => void handleOpenExternal(latestRelease.url)}
+                  >
+                    {tr(locale, 'Open Release Page', 'リリースページを開く')}
+                  </button>
+                </div>
+              ) : null}
+              {updatesError ? (
+                <p className="drop-hint">{updatesError}</p>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   )
 }

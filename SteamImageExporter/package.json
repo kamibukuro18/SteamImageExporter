@@ -1,9 +1,14 @@
 {
   "name": "steamimageexporter",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "sync:metadata": "node ./scripts/sync-app-metadata.mjs",
+    "predev": "npm run sync:metadata",
+    "prebuild": "npm run sync:metadata",
+    "prepreview": "npm run sync:metadata",
+    "pretauri": "npm run sync:metadata",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",

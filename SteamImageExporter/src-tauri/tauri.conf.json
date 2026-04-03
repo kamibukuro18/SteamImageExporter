@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "steamimageexporter",
+  "productName": "Steam Image Exporter",
   "version": "0.1.0",
   "identifier": "com.ryotaikegai.steamimageexporter",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "steamimageexporter",
+        "title": "Steam Image Exporter",
         "width": 1200,
         "height": 820,
         "resizable": true,
@@ -40,7 +40,7 @@
   },
   "plugins": {
     "shell": {
-      "open": "^(file://.+|/.*|[A-Za-z]:\\\\.*)$"
+      "open": "^(https?://.+|file://.+|/.*|[A-Za-z]:\\\\.*)$"
     }
   }
 }
