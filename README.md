@@ -1,5 +1,7 @@
 # Steam Image Exporter
 
+![Steam Image Exporter hero](./docs/images/readme-hero.png)
+
 Steam ストア公開で必要になりがちな画像セットを、1 枚のキーアートからまとめて生成するデスクトップアプリです。
 
 入力画像を読み込み、必要に応じてロゴを重ね、Steam 向けの複数サイズを書き出します。ロゴ配置のテンプレート確認、注目点の指定、簡易プリフライトチェックにも対応しています。
